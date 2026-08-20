@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { EditorialApprovalPanel } from "./EditorialApprovalPanel";
+import { TechnicalCleanupSummary } from "./TechnicalCleanupSummary";
 
 interface EpisodeRecord {
   id: string;
@@ -184,6 +185,8 @@ export function EpisodeList({ showId, showName }: EpisodeListProps) {
                     </button>
                   )}
                 </div>
+
+                <TechnicalCleanupSummary sourceImmutable={episode.source.immutable} />
 
                 <EditorialApprovalPanel
                   episodeId={episode.id}
