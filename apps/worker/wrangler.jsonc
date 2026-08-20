@@ -9,7 +9,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "hrtechify-podcast-prod",
+      "database_name": "hrtechify-public-podcast-studio",
       "database_id": "562b9a8f-2640-4b92-8426-1575ddd2e7f6",
       "migrations_dir": "../../database/migrations"
     }
