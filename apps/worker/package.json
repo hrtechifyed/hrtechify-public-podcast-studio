@@ -16,7 +16,9 @@
   "dependencies": {
     "@cloudflare/containers": "0.3.7",
     "@hrtechify/audio": "0.1.0",
-    "@hrtechify/shared": "0.1.0"
+    "@hrtechify/renderer": "0.1.0",
+    "@hrtechify/shared": "0.1.0",
+    "@hrtechify/templates": "0.1.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260818.1",
