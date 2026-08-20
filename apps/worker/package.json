@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "wrangler dev",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "db:migrations:list": "wrangler d1 migrations list hrtechify-podcast-prod --remote",
+    "db:migrate:local": "wrangler d1 migrations apply hrtechify-podcast-prod --local",
+    "db:migrate:remote": "wrangler d1 migrations apply hrtechify-podcast-prod --remote"
   },
   "dependencies": {
     "@hrtechify/shared": "0.1.0"
