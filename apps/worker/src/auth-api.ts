@@ -16,6 +16,7 @@ import {
   saveOAuthState,
 } from "./auth-store";
 import { isEmailDeliveryConfigured, sendMagicLinkEmail } from "./email";
+import { passwordAuthConfiguration } from "./password-auth-api";
 import { clearSessionCookie, createSessionCookie } from "./session";
 import { findOrCreateUserForProvider } from "./users";
 
@@ -72,7 +73,6 @@ interface GoogleUserInfo {
   sub?: string;
   email?: string;
   email_verified?: boolean;
-  name?: string;
 }
 
 const startGoogle = async (request: Request, env: WorkerEnv) => {
@@ -96,7 +96,7 @@ const startGoogle = async (request: Request, env: WorkerEnv) => {
   authorizationUrl.searchParams.set("client_id", env.GOOGLE_AUTH_CLIENT_ID!);
   authorizationUrl.searchParams.set("redirect_uri", redirectUri);
   authorizationUrl.searchParams.set("response_type", "code");
-  authorizationUrl.searchParams.set("scope", "openid email profile");
+  authorizationUrl.searchParams.set("scope", "openid email");
   authorizationUrl.searchParams.set("state", state);
   authorizationUrl.searchParams.set("code_challenge", challenge);
   authorizationUrl.searchParams.set("code_challenge_method", "S256");
@@ -164,7 +164,6 @@ const finishGoogle = async (request: Request, env: WorkerEnv) => {
     "google",
     profile.sub,
     profile.email,
-    profile.name,
   );
 
   if (user.status !== "active") {
@@ -272,6 +271,7 @@ export const handleAuthApi = async (
       providers: {
         google: googleConfigured(env),
         email: emailConfigured(env),
+        password: passwordAuthConfiguration(env),
       },
     });
   }
