@@ -8,9 +8,9 @@ import {
   type EditorialProposalInput,
 } from "./editorial-edits";
 import type { EpisodeRow } from "./episodes";
-import { createGoogleDriveSession } from "./google-drive";
-import { uploadGoogleDriveEpisodePublishArtifactBytes } from "./google-drive-publish-artifacts";
 import { getShowForUser } from "./shows";
+import { uploadEpisodePublishArtifactBytes } from "./storage-publish-artifacts";
+import { createStudioStorageSession } from "./studio-storage";
 import { getStorageConnectionForUser } from "./storage-store";
 
 export const WHISPER_MODEL = "@cf/openai/whisper";
@@ -37,6 +37,7 @@ export class EditorialAnalysisError extends Error {
     public readonly status = 422,
   ) {
     super(code);
+    this.name = "EditorialAnalysisError";
   }
 }
 
@@ -350,34 +351,46 @@ export const dedupeEditorialProposals = (input: EditorialProposalInput[]) => {
   return output.slice(0, 500);
 };
 
+const loadEpisodeStorage = async (
+  env: WorkerEnv,
+  db: D1DatabaseLike,
+  userId: string,
+  episode: EpisodeRow,
+) => {
+  const [show, connection] = await Promise.all([
+    getShowForUser(db, userId, episode.show_id),
+    getStorageConnectionForUser(db, userId, episode.source_storage_connection_id),
+  ]);
+  if (!show) throw new EditorialAnalysisError("show_not_found", 404);
+  if (!connection || connection.status !== "active") {
+    throw new EditorialAnalysisError("storage_connection_not_found", 404);
+  }
+  if (connection.provider !== episode.source_provider) {
+    throw new EditorialAnalysisError("episode_source_provider_mismatch", 409);
+  }
+  if (show.storage_connection_id !== connection.id) {
+    throw new EditorialAnalysisError("show_storage_connection_mismatch", 409);
+  }
+  const storage = await createStudioStorageSession(env, db, userId, connection);
+  return { show, connection, storage };
+};
+
 const sourceAudioBytes = async (
   env: WorkerEnv,
   db: D1DatabaseLike,
   userId: string,
   episode: EpisodeRow,
 ) => {
-  if (episode.source_provider !== "google-drive") {
-    throw new EditorialAnalysisError("analysis_source_provider_not_supported", 422);
-  }
-  const [show, connection] = await Promise.all([
-    getShowForUser(db, userId, episode.show_id),
-    getStorageConnectionForUser(db, userId, episode.source_storage_connection_id),
-  ]);
-  if (!show) throw new EditorialAnalysisError("show_not_found", 404);
-  if (!connection || connection.provider !== "google-drive") {
-    throw new EditorialAnalysisError("google_drive_connection_not_found", 404);
-  }
-  if (show.storage_connection_id !== connection.id) {
-    throw new EditorialAnalysisError("show_storage_connection_mismatch", 409);
-  }
-
-  const drive = await createGoogleDriveSession(env, userId, connection);
-  const download = await drive.downloadOwnedFile(show.id, show.name, episode.source_file_id);
-  if (download.file.id !== episode.source_file_id || download.file.appProperties.assetKind !== "original-recording") {
+  const { show, storage } = await loadEpisodeStorage(env, db, userId, episode);
+  const download = await storage.downloadOwnedFile(show.id, show.name, episode.source_file_id);
+  if (
+    download.file.id !== episode.source_file_id ||
+    download.file.provider !== episode.source_provider ||
+    download.file.appProperties.assetKind !== "original-recording" ||
+    download.file.appProperties.immutable !== "true" ||
+    download.file.appProperties.showId !== show.id
+  ) {
     throw new EditorialAnalysisError("episode_source_not_verified_original", 409);
-  }
-  if (download.file.appProperties.immutable !== "true") {
-    throw new EditorialAnalysisError("episode_source_not_immutable", 409);
   }
   if (!download.body) throw new EditorialAnalysisError("analysis_source_empty", 422);
   const mimeType = (download.file.mimeType || episode.source_mime_type || download.sourceContentType || "")
@@ -399,18 +412,7 @@ const persistCaptionAnalysisArtifacts = async (
   analysisRunId: string,
   words: TimedWord[],
 ) => {
-  const [show, connection] = await Promise.all([
-    getShowForUser(db, userId, episode.show_id),
-    getStorageConnectionForUser(db, userId, episode.source_storage_connection_id),
-  ]);
-  if (!show) throw new EditorialAnalysisError("show_not_found", 404);
-  if (!connection || connection.provider !== "google-drive") {
-    throw new EditorialAnalysisError("google_drive_connection_not_found", 404);
-  }
-  if (show.storage_connection_id !== connection.id) {
-    throw new EditorialAnalysisError("show_storage_connection_mismatch", 409);
-  }
-
+  const { show, connection } = await loadEpisodeStorage(env, db, userId, episode);
   const exactWords = words.map(({ word, startMs, endMs }) => ({ word, startMs, endMs }));
   const document = createCaptionTimingDocument({
     episodeId: episode.id,
@@ -428,13 +430,13 @@ const persistCaptionAnalysisArtifacts = async (
     analysisRunId,
   } as const;
 
-  await uploadGoogleDriveEpisodePublishArtifactBytes(env, userId, connection, {
+  await uploadEpisodePublishArtifactBytes(env, db, userId, connection, {
     ...scope,
     assetKind: "caption-word-timings",
     fileName: `caption-words-${analysisRunId}.json`,
     bytes: timingBytes,
   });
-  await uploadGoogleDriveEpisodePublishArtifactBytes(env, userId, connection, {
+  await uploadEpisodePublishArtifactBytes(env, db, userId, connection, {
     ...scope,
     assetKind: "source-captions-vtt",
     fileName: `source-captions-${analysisRunId}.vtt`,
