@@ -1,0 +1,17 @@
+{
+  "name": "@hrtechify/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@hrtechify/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.31.0"
+  }
+}
