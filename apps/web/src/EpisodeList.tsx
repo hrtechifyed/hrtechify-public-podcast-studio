@@ -124,6 +124,7 @@ export function EpisodeList({ showId, showName }: EpisodeListProps) {
         <div>
           <p className="eyebrow" style={{ marginTop: 0 }}>Episodes</p>
           <strong>Verified original recordings</strong>
+          <p className="muted" style={{ margin: "5px 0 0" }}>Changing an episode title changes Studio metadata only. It never renames, edits or replaces the immutable original file in your storage.</p>
         </div>
         <button type="button" className="secondary-action compact" onClick={() => void loadEpisodes()} disabled={loading}>
           {loading ? "Refreshing…" : "Refresh episodes"}
