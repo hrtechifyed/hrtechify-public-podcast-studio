@@ -16,10 +16,10 @@ test("branding API requires authenticated tenant-scoped show and Drive lookups",
 
 test("actual body bytes are validated before Drive upload", () => {
   const validateIndex = apiSource.indexOf("validateBrandAssetBody(bytes, upload.contentLength)");
-  const uploadIndex = apiSource.indexOf("uploadOriginalBrandAsset");
+  const uploadCallIndex = apiSource.indexOf("const asset = await uploadOriginalBrandAsset");
   assert.ok(validateIndex >= 0);
-  assert.ok(uploadIndex >= 0);
-  assert.ok(validateIndex < uploadIndex);
+  assert.ok(uploadCallIndex >= 0);
+  assert.ok(validateIndex < uploadCallIndex);
 });
 
 test("brand originals are stored only in the selected show Brand Assets folder", () => {
