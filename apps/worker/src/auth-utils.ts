@@ -27,7 +27,10 @@ export const safeReturnTo = (value: string | null | undefined) => {
   return value;
 };
 
-export const addSecondsIso = (seconds: number) =>
-  new Date(Date.now() + seconds * 1000).toISOString();
+export const addSecondsSqlite = (seconds: number) =>
+  new Date(Date.now() + seconds * 1000)
+    .toISOString()
+    .slice(0, 19)
+    .replace("T", " ");
 
 export const pkceChallenge = async (verifier: string) => sha256Base64Url(verifier);
