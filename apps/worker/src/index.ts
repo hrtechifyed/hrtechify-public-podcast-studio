@@ -10,6 +10,7 @@ import { handleBackgroundRemovalApi } from "./background-removal-api";
 import { handleBrandAssetsApi } from "./brand-assets-api";
 import { handleBrandMediaApi } from "./brand-media-api";
 import { handleDriveFileApi } from "./drive-file-api";
+import { handleDropboxFileApi } from "./dropbox-file-api";
 import { handleEditorialEditsApi } from "./editorial-edits-api";
 import { handleEpisodeApi } from "./episode-api";
 import { handlePasswordAuthApi } from "./password-auth-api";
@@ -63,6 +64,7 @@ export default {
       handleBackgroundRemovalApi,
       handleBrandAssetsApi,
       handleDriveFileApi,
+      handleDropboxFileApi,
       handleEditorialEditsApi,
       handlePublishPreferencesApi,
       handleRenderApi,
