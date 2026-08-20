@@ -133,12 +133,20 @@ export class PodcastRenderContainer extends Container {
   enableInternet = false;
   entrypoint = ["sh", "-c", "sleep infinity"];
 
+  private requireRuntime() {
+    const runtime = this.ctx.container;
+    if (!runtime) throw new Error("render_container_runtime_unavailable");
+    return runtime;
+  }
+
   private async ensureRunning() {
-    if (!this.ctx.container.running) await this.start({ enableInternet: false });
+    const runtime = this.ctx.container;
+    if (!runtime?.running) await this.start({ enableInternet: false });
+    this.requireRuntime();
   }
 
   private async execText(args: string[]) {
-    const process = await this.ctx.container.exec(args);
+    const process = await this.requireRuntime().exec(args);
     const output = await process.output();
     return {
       exitCode: output.exitCode,
@@ -166,7 +174,7 @@ export class PodcastRenderContainer extends Container {
     await this.ensureRunning();
     await this.cleanupFiles();
 
-    const write = await this.ctx.container.exec(["tee", SOURCE_PATH], {
+    const write = await this.requireRuntime().exec(["tee", SOURCE_PATH], {
       stdin: source,
       stdout: "ignore",
     });
@@ -234,14 +242,15 @@ export class PodcastRenderContainer extends Container {
 
   async streamTechnicalMaster(): Promise<ReadableStream<Uint8Array>> {
     await this.ensureRunning();
-    const process = await this.ctx.container.exec(["cat", OUTPUT_PATH], { stderr: "ignore" });
+    const process = await this.requireRuntime().exec(["cat", OUTPUT_PATH], { stderr: "ignore" });
     if (!process.stdout) throw new Error("render_output_stream_missing");
     return process.stdout;
   }
 
   async cleanupFiles() {
-    if (!this.ctx.container.running) return;
-    const process = await this.ctx.container.exec([
+    const runtime = this.ctx.container;
+    if (!runtime?.running) return;
+    const process = await runtime.exec([
       "rm", "-f", SOURCE_PATH, EDITORIAL_PATH, OUTPUT_PATH,
     ], { stdout: "ignore", stderr: "ignore" });
     await process.exitCode;
