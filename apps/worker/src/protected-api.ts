@@ -210,6 +210,9 @@ export const handleProtectedApi = async (
       if (error.message === "d1_not_configured") {
         return json({ error: "d1_not_configured" }, 503);
       }
+      if (error.message === "onboarding_schema_not_ready") {
+        return json({ error: "onboarding_schema_not_ready" }, 503);
+      }
       if (error.message === "invalid_json") {
         return json({ error: "invalid_json" }, 400);
       }
