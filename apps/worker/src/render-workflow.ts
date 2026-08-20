@@ -18,7 +18,10 @@ import {
   uploadGoogleDriveEpisodePublishArtifactBytes,
   uploadGoogleDriveEpisodePublishArtifactStream,
 } from "./google-drive-publish-artifacts";
-import { createGoogleDriveSession } from "./google-drive";
+import {
+  createGoogleDriveSession,
+  type GoogleDriveFileDownload,
+} from "./google-drive";
 import { PodcastRenderContainer } from "./render-container";
 import {
   completeRenderJob,
@@ -77,7 +80,7 @@ const setEpisodeCompleted = async (env: RenderWorkflowEnv, userId: string, episo
   await db.prepare(
     `UPDATE episodes
      SET status = 'completed', updated_at = datetime('now')
-     WHERE id = ? AND user_id = ? AND status = 'rendering'`,
+     WHERE id = ? AND user_id = ? AND status IN ('rendering', 'awaiting_render_confirmation')`,
   ).bind(episodeId, userId).run();
 };
 
@@ -95,7 +98,7 @@ const selectLatestBrandMedia = (
   kind: "show-intro-original" | "show-outro-original",
 ) => media.find((item) => item.assetKind === kind) ?? null;
 
-const validateBrandMedia = (file: Awaited<ReturnType<ReturnType<typeof createGoogleDriveSession>["downloadOwnedFile"]>>, kind: string) => {
+const validateBrandMedia = (file: GoogleDriveFileDownload, kind: string) => {
   if (
     file.file.appProperties.assetKind !== kind ||
     file.file.appProperties.original !== "true" ||
@@ -214,9 +217,10 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
           if (existingTechnical && existingCaptions && existingMp3 && existingMp4) {
             if (
               existingTechnical.mimeType !== "audio/flac" ||
-              existingCaptions.mimeType !== "text/vtt" ||
-              existingMp3.mimeType !== "audio/mpeg" ||
-              existingMp4.mimeType !== "video/mp4"
+              !existingTechnical.sizeBytes ||
+              existingCaptions.mimeType !== "text/vtt" || !existingCaptions.sizeBytes ||
+              existingMp3.mimeType !== "audio/mpeg" || !existingMp3.sizeBytes ||
+              existingMp4.mimeType !== "video/mp4" || !existingMp4.sizeBytes
             ) {
               throw new Error("render_existing_output_invalid");
             }
@@ -224,7 +228,7 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
               id: existingTechnical.id,
               name: existingTechnical.name,
               mimeType: "audio/flac",
-              sizeBytes: existingTechnical.sizeBytes ?? 0,
+              sizeBytes: existingTechnical.sizeBytes,
             });
             job = await completeRenderJob(db, job.id);
             if (!job) throw new Error("render_job_complete_failed");
@@ -252,7 +256,12 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
             let technical = existingTechnical;
             if (technical) {
               const download = await drive.downloadOwnedFile(show.id, show.name, technical.id);
-              if (!download.body || download.file.appProperties.renderJobId !== job.id) {
+              if (
+                !download.body ||
+                download.file.appProperties.renderJobId !== job.id ||
+                download.file.appProperties.sourceFileId !== job.source_file_id ||
+                download.file.appProperties.assetKind !== "derived-technical-master"
+              ) {
                 throw new Error("render_existing_output_invalid");
               }
               await container.importTechnicalMaster(download.body);
@@ -353,11 +362,13 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
               {
                 ...artifactScope,
                 assetKind: "final-captions-vtt",
-                fileName: `captions-${job.id}.vtt`,
+                fileName: `final-captions-${job.id}.vtt`,
                 bytes: vttBytes,
               },
             );
-            if (captions.mimeType !== "text/vtt") throw new Error("render_captions_output_invalid");
+            if (captions.mimeType !== "text/vtt" || !captions.sizeBytes) {
+              throw new Error("render_captions_output_invalid");
+            }
 
             const published = await container.renderFinalPublication({
               templateId: plan.publication.template.id,
@@ -378,7 +389,7 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
               {
                 ...artifactScope,
                 assetKind: "final-podcast-mp3",
-                fileName: `${episode.title}-${job.id}.mp3`,
+                fileName: `final-${job.id}.mp3`,
                 totalBytes: published.mp3SizeBytes,
                 body: await container.streamFinalMp3(),
               },
@@ -390,12 +401,15 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
               {
                 ...artifactScope,
                 assetKind: "final-podcast-mp4",
-                fileName: `${episode.title}-${job.id}.mp4`,
+                fileName: `final-${job.id}.mp4`,
                 totalBytes: published.mp4SizeBytes,
                 body: await container.streamFinalMp4(),
               },
             );
-            if (mp3.mimeType !== "audio/mpeg" || mp4.mimeType !== "video/mp4") {
+            if (
+              mp3.mimeType !== "audio/mpeg" || !mp3.sizeBytes ||
+              mp4.mimeType !== "video/mp4" || !mp4.sizeBytes
+            ) {
               throw new Error("render_final_output_verification_failed");
             }
 
