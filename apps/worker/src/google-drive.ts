@@ -24,6 +24,19 @@ interface DriveFileList {
   files?: DriveFile[];
 }
 
+interface GoogleApiErrorResponse {
+  error?: {
+    code?: number;
+    message?: string;
+    status?: string;
+    errors?: Array<{ reason?: string; message?: string }>;
+    details?: Array<{
+      reason?: string;
+      metadata?: Record<string, string>;
+    }>;
+  };
+}
+
 export interface GoogleDriveWorkspace {
   rootFolderId: string;
   showFolderId: string;
@@ -97,6 +110,56 @@ const refreshGoogleDriveAccessToken = async (
   return token.access_token;
 };
 
+const driveErrorFromResponse = async (response: Response): Promise<GoogleDriveError> => {
+  let payload: GoogleApiErrorResponse | null = null;
+  try {
+    payload = (await response.clone().json()) as GoogleApiErrorResponse;
+  } catch {
+    payload = null;
+  }
+
+  const message = payload?.error?.message?.toLowerCase() ?? "";
+  const reasons = [
+    ...(payload?.error?.errors ?? []).map((item) => item.reason ?? ""),
+    ...(payload?.error?.details ?? []).map((item) => item.reason ?? ""),
+    payload?.error?.status ?? "",
+  ].map((reason) => reason.toLowerCase());
+
+  const apiDisabled =
+    reasons.some((reason) =>
+      ["accessnotconfigured", "service_disabled", "servicedisabled"].includes(reason.replaceAll("_", "")),
+    ) ||
+    message.includes("has not been used") ||
+    message.includes("is disabled") ||
+    message.includes("enable it by visiting") ||
+    message.includes("drive api has not been used");
+
+  if (apiDisabled) {
+    return new GoogleDriveError("google_drive_api_not_enabled", 503);
+  }
+
+  if (response.status === 401) {
+    return new GoogleDriveError("google_drive_authorization_expired", 401);
+  }
+
+  if (response.status === 403) {
+    if (message.includes("insufficient") || reasons.some((reason) => reason.includes("insufficient"))) {
+      return new GoogleDriveError("google_drive_scope_insufficient", 403);
+    }
+    return new GoogleDriveError("google_drive_permission_denied", 403);
+  }
+
+  if (response.status === 404) {
+    return new GoogleDriveError("google_drive_resource_not_found", 404);
+  }
+
+  if (response.status === 429) {
+    return new GoogleDriveError("google_drive_rate_limited", 429);
+  }
+
+  return new GoogleDriveError("google_drive_api_failed", 502);
+};
+
 const driveJson = async <T>(
   accessToken: string,
   url: string,
@@ -108,10 +171,7 @@ const driveJson = async <T>(
 
   const response = await fetch(url, { ...init, headers });
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      throw new GoogleDriveError("google_drive_permission_denied", response.status);
-    }
-    throw new GoogleDriveError("google_drive_api_failed", 502);
+    throw await driveErrorFromResponse(response);
   }
 
   return (await response.json()) as T;
