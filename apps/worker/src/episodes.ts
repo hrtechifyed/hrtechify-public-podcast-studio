@@ -127,8 +127,11 @@ export const ensureEpisodeFromVerifiedOriginal = async (
     .run();
 
   const episode = await db
-    .prepare(`${episodeSelect} WHERE user_id = ? AND show_id = ? AND source_file_id = ?`)
-    .bind(userId, show.id, file.id)
+    .prepare(
+      `${episodeSelect}
+       WHERE user_id = ? AND show_id = ? AND source_provider = ? AND source_file_id = ?`,
+    )
+    .bind(userId, show.id, connection.provider, file.id)
     .first<EpisodeRow>();
   if (!episode) throw new Error("episode_create_failed");
   return episode;
