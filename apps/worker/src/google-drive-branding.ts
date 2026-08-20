@@ -106,17 +106,17 @@ const serialize = (file: DriveBrandFile): BrandAssetRecord => {
 
 const qEscape = (value: string) => value.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
 
-export const uploadOriginalBrandAsset = async (
+const uploadBrandAsset = async (
   env: WorkerEnv,
   userId: string,
   connection: StorageConnectionRow,
   input: {
     showId: string;
     showName: string;
-    assetKind: BrandAssetKind;
     fileName: string;
     mimeType: string;
     bytes: Uint8Array;
+    appProperties: Record<string, string>;
   },
 ) => {
   const drive = await createGoogleDriveSession(env, userId, connection);
@@ -133,9 +133,8 @@ export const uploadOriginalBrandAsset = async (
         role: "asset",
         showId: input.showId,
         folder: "brand-assets",
-        assetKind: input.assetKind,
-        original: "true",
         immutable: "true",
+        ...input.appProperties,
       },
     },
     mimeType: input.mimeType,
@@ -155,6 +154,64 @@ export const uploadOriginalBrandAsset = async (
   });
   if (!response.ok) throw responseError(response);
   return serialize((await response.json()) as DriveBrandFile);
+};
+
+export const uploadOriginalBrandAsset = async (
+  env: WorkerEnv,
+  userId: string,
+  connection: StorageConnectionRow,
+  input: {
+    showId: string;
+    showName: string;
+    assetKind: BrandAssetKind;
+    fileName: string;
+    mimeType: string;
+    bytes: Uint8Array;
+  },
+) => uploadBrandAsset(env, userId, connection, {
+  showId: input.showId,
+  showName: input.showName,
+  fileName: input.fileName,
+  mimeType: input.mimeType,
+  bytes: input.bytes,
+  appProperties: {
+    assetKind: input.assetKind,
+    original: "true",
+  },
+});
+
+export const uploadBackgroundRemovedCandidate = async (
+  env: WorkerEnv,
+  userId: string,
+  connection: StorageConnectionRow,
+  input: {
+    showId: string;
+    showName: string;
+    sourceAssetId: string;
+    sourceAssetKind: BrandAssetKind;
+    fileName: string;
+    bytes: Uint8Array;
+  },
+) => {
+  const assetKind = input.sourceAssetKind === "show-logo-original"
+    ? "show-logo-background-removed-candidate"
+    : "profile-photo-background-removed-candidate";
+
+  return uploadBrandAsset(env, userId, connection, {
+    showId: input.showId,
+    showName: input.showName,
+    fileName: input.fileName,
+    mimeType: "image/png",
+    bytes: input.bytes,
+    appProperties: {
+      assetKind,
+      derived: "true",
+      candidate: "true",
+      sourceAssetId: input.sourceAssetId,
+      sourceAssetKind: input.sourceAssetKind,
+      transformation: "background-removal-v1",
+    },
+  });
 };
 
 export const listShowBrandAssets = async (

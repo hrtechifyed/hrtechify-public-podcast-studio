@@ -20,6 +20,9 @@
       "TOKEN_ENCRYPTION_KEY"
     ]
   },
+  "images": {
+    "binding": "IMAGES"
+  },
   "assets": {
     "directory": "../web/dist",
     "not_found_handling": "single-page-application",
