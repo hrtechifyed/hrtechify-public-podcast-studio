@@ -3,6 +3,7 @@ import { createDropboxSession, DropboxError } from "./dropbox";
 import { createGoogleDriveSession, GoogleDriveError, type GoogleDriveStoredFile } from "./google-drive";
 import {
   getStorageAssetByProviderFileId,
+  parseStorageAssetProperties,
   recordStorageAsset,
   type CreateStorageAssetInput,
   type StorageAssetFolder,
@@ -34,6 +35,7 @@ export class StudioStorageError extends Error {
 }
 
 const appPropertiesFromRecord = (record: StorageAssetRecord) => ({
+  ...parseStorageAssetProperties(record),
   hrtechifyStudio: "v1",
   role: "asset",
   showId: record.show_id,
