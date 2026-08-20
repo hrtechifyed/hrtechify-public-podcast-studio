@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { PLATFORM_CREDIT, PLATFORM_CREDIT_POSITION } from "../packages/shared/src/index";
+import { getSafeTemplateManifest } from "../packages/templates/src/index";
 import {
   normalizeApprovedEditRanges,
   parseStoredRenderPlan,
@@ -69,11 +71,13 @@ test("invalid approved ranges are rejected before a render plan can be persisted
   );
 });
 
-test("stored render plan must match immutable source, cleanup version and FLAC output contract", () => {
+test("stored v2 render plan must match immutable source, publication snapshot and fixed output contracts", () => {
+  const template = getSafeTemplateManifest("hrtechify-studio-dark", 1);
   const valid = {
-    version: "render-plan-v1",
+    version: "render-plan-v2",
     sourceFileId: "source-1",
     sourceImmutable: true,
+    analysisRunId: "analysis-1",
     cleanup: {
       profileVersion: "podcast-cleanup-v1",
       sourceImmutable: true,
@@ -87,6 +91,26 @@ test("stored render plan must match immutable source, cleanup version and FLAC o
       adjustments: [],
     },
     approvedEdits: [],
+    publication: {
+      template,
+      captionsEnabled: true,
+      display: {
+        showName: "The HRTechify Show",
+        episodeName: "HRPodcast",
+        hostName: "HRTechify",
+      },
+      platformCredit: {
+        text: PLATFORM_CREDIT,
+        required: true,
+        removable: false,
+        position: PLATFORM_CREDIT_POSITION,
+      },
+      outputs: {
+        captions: { role: "final-captions-vtt", mimeType: "text/vtt", extension: "vtt" },
+        mp3: { role: "final-podcast-mp3", mimeType: "audio/mpeg", extension: "mp3" },
+        mp4: { role: "final-podcast-mp4", mimeType: "video/mp4", extension: "mp4" },
+      },
+    },
     output: {
       role: "derived-technical-master",
       mimeType: "audio/flac",
@@ -96,6 +120,7 @@ test("stored render plan must match immutable source, cleanup version and FLAC o
   const parsed = parseStoredRenderPlan(jobRow(JSON.stringify(valid)));
   assert.equal(parsed.sourceFileId, "source-1");
   assert.equal(parsed.output.mimeType, "audio/flac");
+  assert.equal(parsed.publication.platformCredit.text, PLATFORM_CREDIT);
 
   assert.throws(
     () => parseStoredRenderPlan(jobRow(JSON.stringify({ ...valid, sourceFileId: "other" }))),
@@ -106,6 +131,10 @@ test("stored render plan must match immutable source, cleanup version and FLAC o
       ...valid,
       output: { ...valid.output, mimeType: "audio/mpeg" },
     }))),
+    /render_plan_corrupt/,
+  );
+  assert.throws(
+    () => parseStoredRenderPlan(jobRow(JSON.stringify({ ...valid, version: "render-plan-v1" }))),
     /render_plan_corrupt/,
   );
 });
