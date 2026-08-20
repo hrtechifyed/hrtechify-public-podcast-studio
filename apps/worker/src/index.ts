@@ -9,6 +9,7 @@ import { handleBackgroundRemovalApi } from "./background-removal-api";
 import { handleBrandAssetsApi } from "./brand-assets-api";
 import { handleBrandMediaApi } from "./brand-media-api";
 import { handleDriveFileApi } from "./drive-file-api";
+import { handleEpisodeApi } from "./episode-api";
 import { handlePasswordAuthApi } from "./password-auth-api";
 import { handleProtectedApi } from "./protected-api";
 import { handleStorageApi } from "./storage-api";
@@ -58,6 +59,9 @@ export default {
 
     const driveFileResponse = await handleDriveFileApi(request, url, env);
     if (driveFileResponse) return driveFileResponse;
+
+    const episodeResponse = await handleEpisodeApi(request, url, env);
+    if (episodeResponse) return episodeResponse;
 
     const storageResponse = await handleStorageApi(request, url, env);
     if (storageResponse) return storageResponse;
