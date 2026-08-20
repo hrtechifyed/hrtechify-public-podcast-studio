@@ -62,6 +62,14 @@ export function PrivacyPage() {
           <p>The original image remains unchanged. A generated result does not become the production choice automatically: you must explicitly choose <strong>Accept</strong>, <strong>Retry</strong>, or <strong>Keep Original</strong>.</p>
         </PrivacySection>
 
+        <PrivacySection title="Podcast transcription and edit analysis">
+          <p>Podcast speech analysis runs only when you explicitly choose <strong>Analyze original recording</strong>. The server reads the exact immutable episode original that belongs to your show and sends the audio to Cloudflare Workers AI for transcription and conservative edit-candidate detection. If the source is a video, Cloudflare Media Transformations may first extract its audio track.</p>
+          <p>The current analyzer uses word timing to identify clear long pauses and repeated speech, and may use a text model to propose clear false starts, repeated speech or fumbles. It is specifically instructed not to propose removing ideas, opinions, meaningful hesitation, emphasis, accents, dialect, grammar choices or stylistic wording.</p>
+          <p><strong>Analysis never changes the original recording.</strong> The full transcript is used transiently during the analysis request and is not stored by the Studio in D1. D1 stores the resulting proposal ranges, explanations, confidence values, analysis-run metadata and your append-only decisions.</p>
+          <p>Every spoken or timing change remains a proposal until you explicitly choose <strong>Apply in final edit</strong>. Choosing <strong>Keep Original</strong> rejects that proposed change. Neither choice overwrites, trims or replaces the source file in your Drive.</p>
+          <p>This processing is unrelated to Gmail. Podcast analysis does not request or use Gmail, Contacts or Calendar permissions.</p>
+        </PrivacySection>
+
         <PrivacySection title="Passwords and account recovery">
           <p>For email/password accounts, HRTechify does not store readable or reversible passwords. Passwords are processed with <strong>PBKDF2-HMAC-SHA256</strong>, a unique random salt and <strong>600,000 iterations</strong>; only the resulting hash material is stored.</p>
           <p>Password sign-up is email-verification-first. Verification links expire after 30 minutes and are single-use. Password-reset links expire after 20 minutes and are single-use. The random link token itself is not stored in D1; only its SHA-256 hash is stored.</p>
@@ -74,7 +82,7 @@ export function PrivacyPage() {
         </PrivacySection>
 
         <PrivacySection title="Services involved">
-          <p><strong>Cloudflare</strong> runs the Worker, D1 database and the image-processing binding used when you explicitly request background removal.</p>
+          <p><strong>Cloudflare</strong> runs the Worker and D1 database, the image-processing binding used when you explicitly request background removal, Workers AI used when you explicitly request podcast analysis, and Media Transformations when a video source needs its audio extracted for analysis.</p>
           <p><strong>Google</strong> provides optional Google Sign-In and, separately, optional Google Drive storage when you authorize it.</p>
           <p><strong>Transactional email</strong> is used only for account verification, password recovery, or other account-authentication emails when email delivery is enabled. The current codebase uses a configured Resend integration for that delivery; HRTechify does not need Gmail inbox access to send those emails.</p>
         </PrivacySection>

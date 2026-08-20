@@ -35,9 +35,27 @@ export interface ImagesBindingLike {
   input(source: ReadableStream<Uint8Array> | ArrayBuffer | Uint8Array): ImagesTransformLike;
 }
 
+export interface AiBindingLike {
+  run(model: string, input: Record<string, unknown>): Promise<unknown>;
+}
+
+export interface MediaOutputLike {
+  response(): Promise<Response> | Response;
+}
+
+export interface MediaInputLike {
+  output(options: Record<string, unknown>): MediaOutputLike;
+}
+
+export interface MediaBindingLike {
+  input(source: ReadableStream<Uint8Array>): MediaInputLike;
+}
+
 export interface WorkerEnv {
   DB?: D1DatabaseLike;
   IMAGES?: ImagesBindingLike;
+  AI?: AiBindingLike;
+  MEDIA?: MediaBindingLike;
   SESSION_SIGNING_KEY?: string;
   GOOGLE_AUTH_CLIENT_ID?: string;
   GOOGLE_AUTH_CLIENT_SECRET?: string;
