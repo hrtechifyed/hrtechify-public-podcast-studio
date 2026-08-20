@@ -24,6 +24,7 @@ export interface StorageAssetRecord {
   state_marker: number;
   selection_choice: "original" | "background-removed" | null;
   selected_asset_id: string | null;
+  properties_json: string;
   created_at: string;
 }
 
@@ -46,20 +47,46 @@ export interface CreateStorageAssetInput {
   stateMarker?: boolean;
   selectionChoice?: "original" | "background-removed" | null;
   selectedAssetId?: string | null;
+  properties?: Record<string, string>;
 }
+
+const normalizeProperties = (input: Record<string, string> | undefined) => {
+  if (!input) return {};
+  const output: Record<string, string> = {};
+  const entries = Object.entries(input);
+  if (entries.length > 24) throw new Error("storage_asset_properties_invalid");
+  for (const [key, value] of entries) {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(key) || typeof value !== "string" || value.length > 500) {
+      throw new Error("storage_asset_properties_invalid");
+    }
+    output[key] = value;
+  }
+  return output;
+};
+
+export const parseStorageAssetProperties = (record: StorageAssetRecord) => {
+  try {
+    const parsed = JSON.parse(record.properties_json || "{}") as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {} as Record<string, string>;
+    return normalizeProperties(parsed as Record<string, string>);
+  } catch {
+    return {} as Record<string, string>;
+  }
+};
 
 export const recordStorageAsset = async (
   db: D1DatabaseLike,
   input: CreateStorageAssetInput,
 ) => {
   if (input.connection.user_id !== input.userId) throw new Error("storage_asset_owner_mismatch");
+  const properties = normalizeProperties(input.properties);
   await db.prepare(
     `INSERT OR IGNORE INTO storage_asset_records (
       id, user_id, show_id, connection_id, provider, provider_file_id,
       file_name, mime_type, size_bytes, folder, asset_kind, immutable, original,
       source_file_id, source_asset_id, analysis_run_id, render_job_id,
-      state_marker, selection_choice, selected_asset_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      state_marker, selection_choice, selected_asset_id, properties_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     crypto.randomUUID(),
     input.userId,
@@ -81,6 +108,7 @@ export const recordStorageAsset = async (
     input.stateMarker === true ? 1 : 0,
     input.selectionChoice ?? null,
     input.selectedAssetId ?? null,
+    JSON.stringify(properties),
   ).run();
   return getStorageAssetByProviderFileId(
     db,
@@ -129,6 +157,7 @@ export const findStorageArtifact = async (
     connectionId: string;
     assetKind: string;
     sourceFileId?: string | null;
+    sourceAssetId?: string | null;
     analysisRunId?: string | null;
     renderJobId?: string | null;
   },
@@ -143,6 +172,10 @@ export const findStorageArtifact = async (
   if (input.sourceFileId !== undefined) {
     clauses.push(input.sourceFileId === null ? "source_file_id IS NULL" : "source_file_id = ?");
     if (input.sourceFileId !== null) values.push(input.sourceFileId);
+  }
+  if (input.sourceAssetId !== undefined) {
+    clauses.push(input.sourceAssetId === null ? "source_asset_id IS NULL" : "source_asset_id = ?");
+    if (input.sourceAssetId !== null) values.push(input.sourceAssetId);
   }
   if (input.analysisRunId !== undefined) {
     clauses.push(input.analysisRunId === null ? "analysis_run_id IS NULL" : "analysis_run_id = ?");
