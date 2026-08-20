@@ -73,6 +73,26 @@ const jsonOrNull = async <T,>(response: Response): Promise<T | null> => {
   }
 };
 
+const friendlyStorageError = (code?: string) => {
+  switch (code) {
+    case "google_drive_api_not_enabled":
+      return "Google Drive is connected, but the Google Drive API is not enabled in the Google Cloud project. Enable the Google Drive API, then click Prepare all active shows again.";
+    case "google_drive_permission_denied":
+      return "Google Drive denied the folder operation. Reconnect Google Drive and try again.";
+    case "google_drive_scope_insufficient":
+      return "The connected Google Drive permission is insufficient. Reconnect Google Drive and approve the requested drive.file access.";
+    case "google_drive_authorization_expired":
+    case "google_drive_access_token_failed":
+      return "The Google Drive authorization needs to be refreshed. Reconnect Google Drive and try again.";
+    case "google_drive_rate_limited":
+      return "Google Drive is temporarily rate-limiting requests. Try again in a little while.";
+    case "google_drive_connection_not_found":
+      return "No active Google Drive connection was found. Connect Google Drive first.";
+    default:
+      return code || "Could not prepare the Google Drive folders.";
+  }
+};
+
 export function App() {
   const [account, setAccount] = useState<Account | null>(null);
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
@@ -153,9 +173,7 @@ export function App() {
       body: JSON.stringify({ showId, connectionId }),
     });
     const payload = await jsonOrNull<{ error?: string }>(response);
-    if (!response.ok) {
-      throw new Error(payload?.error ?? "Could not prepare the Google Drive folders.");
-    }
+    if (!response.ok) throw new Error(friendlyStorageError(payload?.error));
     if (!quiet) setNotice("Google Drive folders are ready for this show.");
   };
 
@@ -170,9 +188,7 @@ export function App() {
       body: JSON.stringify({ connectionId }),
     });
     const payload = await jsonOrNull<{ error?: string; provisioned?: unknown[] }>(response);
-    if (!response.ok) {
-      throw new Error(payload?.error ?? "Could not prepare the Google Drive workspaces.");
-    }
+    if (!response.ok) throw new Error(friendlyStorageError(payload?.error));
     await loadShows();
     if (!quiet) {
       const count = payload?.provisioned?.length ?? 0;
@@ -202,14 +218,14 @@ export function App() {
         const payload = await jsonOrNull<{ user: Account }>(accountResponse);
         if (payload?.user) {
           setAccount(payload.user);
-          const [showsPayload, connections] = await Promise.all([loadShows(), loadStorage()]);
+          const [, connections] = await Promise.all([loadShows(), loadStorage()]);
           const activeDrive = connections.filter(
             (connection) => connection.provider === "google-drive" && connection.status === "active",
           );
-          const needsStorage = showsPayload.shows.some(
-            (show) => show.status === "active" && !show.storageConnectionId,
-          );
-          if (activeDrive.length === 1 && needsStorage) {
+
+          // Idempotent repair on each signed-in load when one Drive account is connected.
+          // This creates missing folders and repairs renamed app-owned folders without duplication.
+          if (activeDrive.length === 1) {
             await provisionAllActiveShows(activeDrive[0].id, true);
           }
         }
@@ -386,9 +402,35 @@ export function App() {
     }
   };
 
+  const deleteShow = async (show: Show) => {
+    const confirmed = window.confirm(
+      `Delete "${show.name}" from HRTechify Podcast Studio?\n\nThis removes the show from the Studio. Files already stored in Google Drive are not deleted.`,
+    );
+    if (!confirmed) return;
+
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/shows/${show.id}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      const payload = await jsonOrNull<{ error?: string }>(response);
+      if (!response.ok) throw new Error(payload?.error ?? "Could not delete the show.");
+      await loadShows();
+      setNotice(`"${show.name}" was deleted from the Studio. Google Drive files were left untouched.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not delete the show.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const setupShowStorage = async (show: Show, connection: StorageConnection) => {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await provisionShowStorage(show.id, connection.id);
       await loadShows();
@@ -402,6 +444,7 @@ export function App() {
   const setupAllStorage = async (connection: StorageConnection) => {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await provisionAllActiveShows(connection.id);
     } catch (caught) {
@@ -589,7 +632,7 @@ export function App() {
         <section className="shows-actions">
           <div>
             <h2>Active shows</h2>
-            <p>{limits.canCreate ? `You can create ${limits.maximum - limits.active} more.` : "You have reached the five-show limit. Archive a show to create another."}</p>
+            <p>{limits.canCreate ? `You can create ${limits.maximum - limits.active} more.` : "You have reached the five-show limit. Archive or delete a show to create another."}</p>
           </div>
           <button type="button" className="primary-action" onClick={openCreateShow} disabled={!limits.canCreate || busy}>
             + Create show
@@ -667,6 +710,7 @@ export function App() {
                 <div className="show-card-actions">
                   <button type="button" className="secondary-action compact" onClick={() => openEditShow(show)}>Edit</button>
                   <button type="button" className="text-button" onClick={() => void changeShowStatus(show, "archive")} disabled={busy}>Archive</button>
+                  <button type="button" className="text-button" onClick={() => void deleteShow(show)} disabled={busy}>Delete</button>
                 </div>
               </article>
             );
@@ -706,6 +750,7 @@ export function App() {
                   <div className="inline-actions">
                     <button className="text-button" type="button" onClick={() => openEditShow(show)}>Edit</button>
                     <button className="secondary-action compact" type="button" onClick={() => void changeShowStatus(show, "restore")} disabled={busy || !limits.canCreate}>Restore</button>
+                    <button className="text-button" type="button" onClick={() => void deleteShow(show)} disabled={busy}>Delete</button>
                   </div>
                 </article>
               ))}
