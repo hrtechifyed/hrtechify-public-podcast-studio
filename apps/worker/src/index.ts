@@ -1,0 +1,43 @@
+import {
+  MAX_ACTIVE_SHOWS_PER_USER,
+  PLATFORM_CREDIT,
+  PLATFORM_CREDIT_POSITION,
+} from "@hrtechify/shared";
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body, null, 2), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/api/health") {
+      return json({
+        ok: true,
+        service: "hrtechify-public-podcast-studio-api",
+      });
+    }
+
+    if (url.pathname === "/api/config") {
+      return json({
+        maxActiveShowsPerUser: MAX_ACTIVE_SHOWS_PER_USER,
+        platformCredit: PLATFORM_CREDIT,
+        platformCreditPosition: PLATFORM_CREDIT_POSITION,
+      });
+    }
+
+    return json(
+      {
+        error: "not_found",
+        message: "Route not found.",
+      },
+      404,
+    );
+  },
+};
