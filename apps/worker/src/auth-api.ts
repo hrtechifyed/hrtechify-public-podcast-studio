@@ -271,7 +271,7 @@ export const handleAuthApi = async (
       providers: {
         google: googleConfigured(env),
         email: emailConfigured(env),
-        password: passwordAuthConfiguration(env),
+        password: await passwordAuthConfiguration(env),
       },
     });
   }

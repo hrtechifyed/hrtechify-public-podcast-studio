@@ -1,0 +1,39 @@
+import type { D1DatabaseLike } from "./db";
+
+const tableExists = async (db: D1DatabaseLike, tableName: string) => {
+  const row = await db
+    .prepare(
+      `SELECT name
+       FROM sqlite_master
+       WHERE type = 'table' AND name = ?
+       LIMIT 1`,
+    )
+    .bind(tableName)
+    .first<{ name: string }>();
+  return row?.name === tableName;
+};
+
+const allTablesExist = async (db: D1DatabaseLike, tableNames: readonly string[]) => {
+  for (const tableName of tableNames) {
+    if (!(await tableExists(db, tableName))) return false;
+  }
+  return true;
+};
+
+export const PASSWORD_AUTH_TABLES = [
+  "password_credentials",
+  "password_verifications",
+  "password_resets",
+  "auth_rate_limits",
+] as const;
+
+export const ONBOARDING_TABLES = [
+  "user_onboarding",
+  "show_preferences",
+] as const;
+
+export const isPasswordAuthSchemaReady = (db: D1DatabaseLike) =>
+  allTablesExist(db, PASSWORD_AUTH_TABLES);
+
+export const isOnboardingSchemaReady = (db: D1DatabaseLike) =>
+  allTablesExist(db, ONBOARDING_TABLES);

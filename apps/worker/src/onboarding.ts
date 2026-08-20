@@ -4,6 +4,7 @@ import {
   HRTECHIFY_STARTER_SHOW_NAME,
 } from "@hrtechify/shared";
 import type { D1DatabaseLike } from "./db";
+import { isOnboardingSchemaReady } from "./schema-readiness";
 import { listShowsForUser, type ShowRow } from "./shows";
 
 export interface UserOnboardingState {
@@ -15,6 +16,11 @@ interface UserOnboardingRow {
   starter_show_id: string | null;
   brand_prompt_dismissed_at: string | null;
 }
+
+const noOnboardingState = (): UserOnboardingState => ({
+  starterShowId: null,
+  brandSetupRequired: false,
+});
 
 const readOnboarding = async (
   db: D1DatabaseLike,
@@ -94,13 +100,15 @@ export const ensureUserOnboarding = async (
   db: D1DatabaseLike,
   userId: string,
 ): Promise<UserOnboardingState> => {
+  if (!(await isOnboardingSchemaReady(db))) return noOnboardingState();
+
   const existing = await readOnboarding(db, userId);
   if (existing) return serialize(existing);
 
   const existingShows = await listShowsForUser(db, userId);
   if (existingShows.length > 0) {
     await insertLegacyOnboarding(db, userId);
-    return { starterShowId: null, brandSetupRequired: false };
+    return noOnboardingState();
   }
 
   const claim = await db
@@ -149,13 +157,15 @@ export const ensureUserOnboarding = async (
   }
 
   await insertLegacyOnboarding(db, userId);
-  return { starterShowId: null, brandSetupRequired: false };
+  return noOnboardingState();
 };
 
 export const dismissBrandSetupPrompt = async (
   db: D1DatabaseLike,
   userId: string,
 ): Promise<UserOnboardingState> => {
+  if (!(await isOnboardingSchemaReady(db))) return noOnboardingState();
+
   await db
     .prepare(
       `UPDATE user_onboarding
@@ -165,13 +175,17 @@ export const dismissBrandSetupPrompt = async (
     .bind(userId)
     .run();
   const row = await readOnboarding(db, userId);
-  return row ? serialize(row) : { starterShowId: null, brandSetupRequired: false };
+  return row ? serialize(row) : noOnboardingState();
 };
 
 export const ensureShowPreferences = async (
   db: D1DatabaseLike,
   show: ShowRow,
 ) => {
+  if (!(await isOnboardingSchemaReady(db))) {
+    return { default_episode_name: HRTECHIFY_STARTER_EPISODE_NAME };
+  }
+
   await db
     .prepare(
       `INSERT OR IGNORE INTO show_preferences (show_id, default_episode_name)
@@ -199,6 +213,7 @@ export const updateDefaultEpisodeName = async (
   const cleaned = value.trim();
   if (!cleaned) throw new Error("episode_name_required");
   if (cleaned.length > 160) throw new Error("episode_name_too_long");
+  if (!(await isOnboardingSchemaReady(db))) throw new Error("onboarding_schema_not_ready");
 
   await ensureShowPreferences(db, show);
   await db
