@@ -9,7 +9,8 @@ const jobs = read("apps/worker/src/render-jobs.ts");
 const api = read("apps/worker/src/render-api.ts");
 const workflow = read("apps/worker/src/render-workflow.ts");
 const container = read("apps/worker/src/render-container.ts");
-const drive = read("apps/worker/src/google-drive-derived.ts");
+const derived = read("apps/worker/src/storage-derived.ts");
+const storage = read("apps/worker/src/studio-storage.ts");
 const index = read("apps/worker/src/index.ts");
 const wrangler = read("apps/worker/wrangler.jsonc");
 const dockerfile = read("apps/worker/Dockerfile.render");
@@ -41,8 +42,8 @@ test("render API is authenticated schema-gated and routed before generic Episode
   assert.match(api, /getEpisodeForUser\(db, identity\.userId, episodeId\)/);
   assert.match(api, /isRenderJobSchemaReady/);
   assert.match(api, /env\.RENDER_WORKFLOW\.create/);
-  const renderPosition = index.indexOf("handleRenderApi(request, url, env)");
-  const episodePosition = index.indexOf("handleEpisodeApi(request, url, env)");
+  const renderPosition = index.indexOf("handleRenderApi,");
+  const episodePosition = index.indexOf("handleEpisodeApi,");
   assert.ok(renderPosition >= 0 && episodePosition > renderPosition);
 });
 
@@ -52,6 +53,7 @@ test("render source is bounded before container disk use and reverified against 
   assert.match(workflow, /render_source_too_large/);
   assert.match(workflow, /sourceMetadata\.sizeBytes !== episode\.source_size_bytes/);
   assert.match(workflow, /render_source_not_immutable_original/);
+  assert.match(workflow, /sourceMetadata\.provider !== job\.source_provider/);
 });
 
 test("FFmpeg container has no public internet and uses direct fixed executable arguments", () => {
@@ -81,25 +83,25 @@ test("container verifies timing and performs two-pass loudness and peak normaliz
   assert.match(container, /TRUE_PEAK_TARGET = -1/);
 });
 
-test("Drive derived output is immutable idempotent and tied to exact source and render job", () => {
-  assert.match(drive, /findGoogleDriveDerivedRenderOutput/);
-  assert.match(drive, /assetKind: "derived-technical-master"/);
-  assert.match(drive, /immutable: "true"/);
-  assert.match(drive, /sourceFileId: input\.sourceFileId/);
-  assert.match(drive, /renderJobId: input\.renderJobId/);
-  assert.match(drive, /const existing = await findGoogleDriveDerivedRenderOutput/);
-  assert.match(drive, /content-range.*bytes 0-/s);
+test("derived technical output is immutable idempotent and provider-neutral", () => {
+  assert.match(derived, /findDerivedRenderOutput/);
+  assert.match(derived, /assetKind: "derived-technical-master"/);
+  assert.match(derived, /immutable: true/);
+  assert.match(derived, /sourceFileId: input\.sourceFileId/);
+  assert.match(derived, /renderJobId: input\.renderJobId/);
+  assert.match(derived, /connection\.provider === "google-drive"/);
+  assert.match(derived, /connection\.provider !== "dropbox"/);
   assert.match(workflow, /assetKind !== "original-recording"/);
   assert.match(workflow, /immutable !== "true"/);
 });
 
-test("Google credentials stay in Worker code and are never supplied to the render container", () => {
-  assert.doesNotMatch(container, /GOOGLE_DRIVE_CLIENT/);
-  assert.doesNotMatch(container, /TOKEN_ENCRYPTION_KEY/);
-  assert.doesNotMatch(container, /googleapis\.com/);
-  assert.match(workflow, /createGoogleDriveSession/);
-  assert.match(workflow, /uploadGoogleDriveDerivedRenderStream/);
-  assert.match(privacy, /Google OAuth credentials and Google Drive resumable-upload URLs are never passed into the container/);
+test("provider OAuth credentials stay in Worker code and never enter render container", () => {
+  assert.doesNotMatch(container, /GOOGLE_DRIVE_CLIENT|DROPBOX_CLIENT|TOKEN_ENCRYPTION_KEY/);
+  assert.doesNotMatch(container, /googleapis\.com|dropboxapi\.com/);
+  assert.match(workflow, /createStudioStorageSession/);
+  assert.match(workflow, /uploadDerivedRenderStream/);
+  assert.match(storage, /requireDropboxAssetRecord/);
+  assert.match(privacy, /OAuth credentials and provider upload-session details remain Worker-side and are never passed into the container/);
 });
 
 test("UI requires explicit render confirmation and sends no processing plan from the browser", () => {
