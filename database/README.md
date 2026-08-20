@@ -4,7 +4,7 @@ HRTechify Public Podcast Studio uses Cloudflare D1 for small application metadat
 
 ## Production database
 
-The production Worker binding is `DB` and points to the Cloudflare D1 database named `hrtechify-podcast-prod`.
+The production Worker binding is `DB` and points to the Cloudflare D1 database named `hrtechify-public-podcast-studio`.
 
 The D1 database identifier is intentionally present in Wrangler configuration because it is a resource identifier, not a credential. Cloudflare API tokens, session keys, OAuth client secrets and user data must never be committed.
 
