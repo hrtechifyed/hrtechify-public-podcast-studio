@@ -40,6 +40,22 @@ const formatTime = (milliseconds: number) => {
   return `${String(minutes).padStart(2, "0")}:${seconds.toFixed(1).padStart(4, "0")}`;
 };
 
+const friendlyAnalysisError = (code?: string) => {
+  switch (code) {
+    case "workers_ai_not_configured": return "Podcast analysis is not enabled for this deployment yet.";
+    case "media_binding_not_configured": return "Video audio extraction is not enabled for this deployment yet.";
+    case "analysis_source_too_large_for_inline_worker": return "This original is too large for the current inline analyzer. It remains safe in your storage and will need the larger-file processing pipeline.";
+    case "analysis_source_mime_not_supported": return "This recording format cannot be analyzed by the current inline analyzer.";
+    case "analysis_transcript_timestamps_missing": return "The transcript did not contain reliable word timing, so no edit proposals were created.";
+    case "analysis_transcription_failed": return "The transcription service could not analyze this original. No edit proposals were created.";
+    case "analysis_media_transform_failed": return "Audio could not be extracted from this video. The original remains unchanged.";
+    case "analysis_already_running": return "An analysis is already running for this episode.";
+    case "google_drive_authorization_expired":
+    case "google_drive_access_token_failed": return "Google Drive needs to be reconnected before this original can be analyzed.";
+    default: return code || "Editorial analysis could not be completed.";
+  }
+};
+
 export function EditorialApprovalPanel({
   episodeId,
   episodeTitle,
@@ -52,6 +68,8 @@ export function EditorialApprovalPanel({
   const [proposals, setProposals] = useState<EditorialProposal[]>([]);
   const [unresolvedCount, setUnresolvedCount] = useState(0);
   const [busyProposalId, setBusyProposalId] = useState<string | null>(null);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
+  const [analysisNotice, setAnalysisNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
@@ -90,6 +108,45 @@ export function EditorialApprovalPanel({
     if (next && !loaded) void load();
   };
 
+  const analyze = async () => {
+    setAnalysisBusy(true);
+    setError(null);
+    setAnalysisNotice(null);
+    setOpen(true);
+    onStatusChange?.("analyzing");
+    try {
+      const response = await fetch(`/api/episodes/${encodeURIComponent(episodeId)}/analyze`, {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      const payload = await response.json().catch(() => null) as {
+        proposalCount?: number;
+        transcriptWordCount?: number;
+        episodeStatus?: string;
+        proposals?: EditorialProposal[];
+        unresolvedCount?: number;
+        error?: string;
+      } | null;
+      if (!response.ok) throw new Error(friendlyAnalysisError(payload?.error));
+      setLoaded(true);
+      setSchemaReady(true);
+      setProposals(payload?.proposals ?? []);
+      setUnresolvedCount(payload?.unresolvedCount ?? 0);
+      if (payload?.episodeStatus) onStatusChange?.(payload.episodeStatus);
+      const proposalCount = payload?.proposalCount ?? payload?.proposals?.length ?? 0;
+      setAnalysisNotice(
+        proposalCount === 0
+          ? "Analysis found no clear edit candidates. The immutable original remains unchanged."
+          : `Analysis found ${proposalCount} clear edit candidate${proposalCount === 1 ? "" : "s"}. Review each one before anything can be used in a final edit.`,
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Editorial analysis could not be completed.");
+      await load();
+    } finally {
+      setAnalysisBusy(false);
+    }
+  };
+
   const decide = async (proposalId: string, decision: SpeechEditDecision) => {
     setBusyProposalId(proposalId);
     setError(null);
@@ -121,8 +178,8 @@ export function EditorialApprovalPanel({
   };
 
   const statusHint = () => {
+    if (analysisBusy || episodeStatus === "analyzing") return "Transcribing the immutable original and looking for clear edit candidates…";
     if (episodeStatus === "source_ready") return "Editorial analysis has not run yet.";
-    if (episodeStatus === "analyzing") return "Editorial analysis is in progress.";
     if (episodeStatus === "failed") return "Editorial analysis needs attention before review.";
     if (episodeStatus === "awaiting_edit_approval") {
       return unresolvedCount > 0 ? `${unresolvedCount} proposal${unresolvedCount === 1 ? "" : "s"} still need a decision.` : "Review the proposed edits.";
@@ -133,22 +190,33 @@ export function EditorialApprovalPanel({
   };
 
   const decisionsLocked = episodeStatus === "rendering" || episodeStatus === "completed" || episodeStatus === "cancelled";
+  const canAnalyze = !decisionsLocked && episodeStatus !== "analyzing";
 
   return (
     <div style={{ width: "100%", marginTop: 10 }}>
-      <button type="button" className="secondary-action compact" onClick={toggle}>
-        {open ? "Hide edit review" : "Review proposed edits"}
-      </button>
-      <span className="muted" style={{ marginLeft: 10 }}>{statusHint()}</span>
+      <div className="inline-actions">
+        <button type="button" className="secondary-action compact" onClick={toggle}>
+          {open ? "Hide edit review" : "Review proposed edits"}
+        </button>
+        {canAnalyze && (
+          <button type="button" className="primary-action compact" onClick={() => void analyze()} disabled={analysisBusy || !schemaReady}>
+            {analysisBusy ? "Analyzing original…" : episodeStatus === "source_ready" ? "Analyze original recording" : "Analyze original again"}
+          </button>
+        )}
+      </div>
+      <span className="muted" style={{ display: "inline-block", marginTop: 7 }}>{statusHint()}</span>
 
       {open && (
         <div className="trust-note" style={{ marginTop: 10 }}>
           <strong>Editorial approval for {episodeTitle}</strong>
           <span>
-            Every item below is a proposal only. “Apply in final edit” approves that exact time range for a later derived edit. “Keep Original” preserves it. Neither decision overwrites, trims or replaces your immutable source recording.
+            Analysis reads the immutable original to detect clear pauses, repeated speech, false starts and fumbles. It does not edit the file. Every item below is a proposal only. “Apply in final edit” approves that exact time range for a later derived edit. “Keep Original” preserves it. Neither decision overwrites, trims or replaces your immutable source recording.
           </span>
 
-          {!loaded ? (
+          {analysisBusy && <span>Transcribing and analyzing the original. No changes are being applied.</span>}
+          {analysisNotice && <div className="notice success" style={{ marginTop: 10 }}>{analysisNotice}</div>}
+
+          {!loaded && !analysisBusy ? (
             <span>Loading proposed edits…</span>
           ) : !schemaReady ? (
             <span>Editorial approval tracking is not enabled in the database yet. The original recording remains unchanged.</span>
@@ -177,7 +245,7 @@ export function EditorialApprovalPanel({
                     <button
                       type="button"
                       className={proposal.decision === "apply" ? "primary-action compact" : "secondary-action compact"}
-                      disabled={decisionsLocked || busyProposalId === proposal.id}
+                      disabled={decisionsLocked || busyProposalId === proposal.id || analysisBusy}
                       onClick={() => void decide(proposal.id, "apply")}
                     >
                       Apply in final edit
@@ -185,7 +253,7 @@ export function EditorialApprovalPanel({
                     <button
                       type="button"
                       className={proposal.decision === "keep_original" ? "primary-action compact" : "secondary-action compact"}
-                      disabled={decisionsLocked || busyProposalId === proposal.id}
+                      disabled={decisionsLocked || busyProposalId === proposal.id || analysisBusy}
                       onClick={() => void decide(proposal.id, "keep_original")}
                     >
                       Keep Original
