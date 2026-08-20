@@ -35,6 +35,24 @@ interface AuthConfig {
   };
 }
 
+interface StorageConfig {
+  providers: {
+    googleDrive: boolean;
+    dropbox: boolean;
+  };
+}
+
+interface StorageConnection {
+  id: string;
+  provider: "google-drive" | "dropbox";
+  accountEmail: string | null;
+  status: "active" | "revoked" | "error";
+  scopes: string[];
+  lastUsedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface ShowFormState {
   name: string;
   hostDisplayName: string;
@@ -58,6 +76,8 @@ const jsonOrNull = async <T,>(response: Response): Promise<T | null> => {
 export function App() {
   const [account, setAccount] = useState<Account | null>(null);
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
+  const [storageConfig, setStorageConfig] = useState<StorageConfig | null>(null);
+  const [storageConnections, setStorageConnections] = useState<StorageConnection[]>([]);
   const [shows, setShows] = useState<Show[]>([]);
   const [limits, setLimits] = useState<ShowLimits>({
     active: 0,
@@ -81,6 +101,13 @@ export function App() {
     () => shows.filter((show) => show.status === "archived"),
     [shows],
   );
+  const activeGoogleDriveConnections = useMemo(
+    () =>
+      storageConnections.filter(
+        (connection) => connection.provider === "google-drive" && connection.status === "active",
+      ),
+    [storageConnections],
+  );
 
   const loadShows = async () => {
     const response = await fetch("/api/shows", { credentials: "same-origin" });
@@ -89,6 +116,72 @@ export function App() {
     if (!payload) throw new Error("Could not read the shows response.");
     setShows(payload.shows);
     setLimits(payload.limits);
+    return payload;
+  };
+
+  const loadStorage = async () => {
+    const [configResponse, connectionsResponse] = await Promise.all([
+      fetch("/api/storage/config", { credentials: "same-origin" }),
+      fetch("/api/storage/connections", { credentials: "same-origin" }),
+    ]);
+
+    if (configResponse.ok) {
+      const config = await jsonOrNull<StorageConfig>(configResponse);
+      if (config) setStorageConfig(config);
+    }
+
+    if (!connectionsResponse.ok) {
+      if (connectionsResponse.status === 401) return [] as StorageConnection[];
+      throw new Error("Could not load your storage connections.");
+    }
+
+    const payload = await jsonOrNull<{ connections: StorageConnection[] }>(connectionsResponse);
+    const connections = payload?.connections ?? [];
+    setStorageConnections(connections);
+    return connections;
+  };
+
+  const provisionShowStorage = async (
+    showId: string,
+    connectionId: string,
+    quiet = false,
+  ) => {
+    const response = await fetch("/api/storage/google-drive/provision", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ showId, connectionId }),
+    });
+    const payload = await jsonOrNull<{ error?: string }>(response);
+    if (!response.ok) {
+      throw new Error(payload?.error ?? "Could not prepare the Google Drive folders.");
+    }
+    if (!quiet) setNotice("Google Drive folders are ready for this show.");
+  };
+
+  const provisionAllActiveShows = async (
+    connectionId: string,
+    quiet = false,
+  ) => {
+    const response = await fetch("/api/storage/google-drive/provision-active-shows", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ connectionId }),
+    });
+    const payload = await jsonOrNull<{ error?: string; provisioned?: unknown[] }>(response);
+    if (!response.ok) {
+      throw new Error(payload?.error ?? "Could not prepare the Google Drive workspaces.");
+    }
+    await loadShows();
+    if (!quiet) {
+      const count = payload?.provisioned?.length ?? 0;
+      setNotice(
+        count > 0
+          ? `Google Drive folders are ready for ${count} active show${count === 1 ? "" : "s"}.`
+          : "Google Drive folders are already ready.",
+      );
+    }
   };
 
   const bootstrap = async () => {
@@ -109,7 +202,16 @@ export function App() {
         const payload = await jsonOrNull<{ user: Account }>(accountResponse);
         if (payload?.user) {
           setAccount(payload.user);
-          await loadShows();
+          const [showsPayload, connections] = await Promise.all([loadShows(), loadStorage()]);
+          const activeDrive = connections.filter(
+            (connection) => connection.provider === "google-drive" && connection.status === "active",
+          );
+          const needsStorage = showsPayload.shows.some(
+            (show) => show.status === "active" && !show.storageConnectionId,
+          );
+          if (activeDrive.length === 1 && needsStorage) {
+            await provisionAllActiveShows(activeDrive[0].id, true);
+          }
         }
       } else if (accountResponse.status === 401) {
         setAccount(null);
@@ -117,8 +219,8 @@ export function App() {
         setAccount(null);
         setError("Authentication or the database is not configured for this deployment yet.");
       }
-    } catch {
-      setError("The studio could not reach its account service.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The studio could not reach its account service.");
     } finally {
       setLoading(false);
     }
@@ -127,11 +229,20 @@ export function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const authStatus = params.get("auth");
+    const storageStatus = params.get("storage");
+    const reason = params.get("reason");
+
     if (authStatus === "success") setNotice("You are signed in.");
     if (authStatus === "error") {
-      setError(`Sign-in could not be completed${params.get("reason") ? `: ${params.get("reason")}` : "."}`);
+      setError(`Sign-in could not be completed${reason ? `: ${reason}` : "."}`);
     }
-    if (authStatus) {
+    if (storageStatus === "connected") {
+      setNotice("Google Drive is connected. Your show folders will be prepared automatically.");
+    }
+    if (storageStatus === "error") {
+      setError(`Google Drive could not be connected${reason ? `: ${reason}` : "."}`);
+    }
+    if (authStatus || storageStatus) {
       window.history.replaceState({}, "", window.location.pathname);
     }
 
@@ -140,6 +251,10 @@ export function App() {
 
   const signInWithGoogle = () => {
     window.location.assign("/api/auth/google/start?returnTo=/");
+  };
+
+  const connectGoogleDrive = () => {
+    window.location.assign("/api/storage/google-drive/start?returnTo=/");
   };
 
   const requestMagicLink = async (event: FormEvent) => {
@@ -173,6 +288,7 @@ export function App() {
     });
     setAccount(null);
     setShows([]);
+    setStorageConnections([]);
     setLimits({ active: 0, maximum: MAX_ACTIVE_SHOWS_PER_USER, canCreate: true });
     setNotice("You are signed out.");
     setBusy(false);
@@ -203,13 +319,14 @@ export function App() {
     setError(null);
 
     try {
+      const wasEditing = Boolean(editingShowId);
       const response = await fetch(editingShowId ? `/api/shows/${editingShowId}` : "/api/shows", {
         method: editingShowId ? "PUT" : "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(showForm),
       });
-      const payload = await jsonOrNull<{ error?: string }>(response);
+      const payload = await jsonOrNull<{ show?: Show; error?: string }>(response);
       if (!response.ok) {
         if (payload?.error === "active_show_limit_reached") {
           throw new Error(`You can have a maximum of ${MAX_ACTIVE_SHOWS_PER_USER} active shows.`);
@@ -217,11 +334,22 @@ export function App() {
         throw new Error(payload?.error ?? "Could not save the show.");
       }
 
+      if (payload?.show) {
+        const currentConnection = payload.show.storageConnectionId
+          ? storageConnections.find((connection) => connection.id === payload.show?.storageConnectionId)
+          : null;
+        if (currentConnection?.provider === "google-drive" && currentConnection.status === "active") {
+          await provisionShowStorage(payload.show.id, currentConnection.id, true);
+        } else if (!wasEditing && activeGoogleDriveConnections.length === 1) {
+          await provisionShowStorage(payload.show.id, activeGoogleDriveConnections[0].id, true);
+        }
+      }
+
       await loadShows();
       setShowFormOpen(false);
       setEditingShowId(null);
       setShowForm(emptyShowForm);
-      setNotice(editingShowId ? "Show updated." : "Show created.");
+      setNotice(wasEditing ? "Show updated." : "Show created.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not save the show.");
     } finally {
@@ -237,17 +365,47 @@ export function App() {
         method: "POST",
         credentials: "same-origin",
       });
-      const payload = await jsonOrNull<{ error?: string }>(response);
+      const payload = await jsonOrNull<{ show?: Show; error?: string }>(response);
       if (!response.ok) {
         if (payload?.error === "active_show_limit_reached") {
           throw new Error(`Archive another show first. Your account already has ${MAX_ACTIVE_SHOWS_PER_USER} active shows.`);
         }
         throw new Error(payload?.error ?? `Could not ${action} the show.`);
       }
+
+      if (action === "restore" && payload?.show && !payload.show.storageConnectionId && activeGoogleDriveConnections.length === 1) {
+        await provisionShowStorage(payload.show.id, activeGoogleDriveConnections[0].id, true);
+      }
+
       await loadShows();
       setNotice(action === "archive" ? "Show archived." : "Show restored.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : `Could not ${action} the show.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setupShowStorage = async (show: Show, connection: StorageConnection) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await provisionShowStorage(show.id, connection.id);
+      await loadShows();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not prepare Google Drive storage.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setupAllStorage = async (connection: StorageConnection) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await provisionAllActiveShows(connection.id);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not prepare Google Drive storage.");
     } finally {
       setBusy(false);
     }
@@ -334,8 +492,7 @@ export function App() {
           </section>
         </main>
 
-        <footer>
-          <span>HRTechify · People · Technology · Growth</span>
+        <footer style={{ justifyContent: "flex-end" }}>
           <span>{PLATFORM_CREDIT}</span>
         </footer>
       </div>
@@ -386,6 +543,49 @@ export function App() {
         {notice && <div className="notice success wide-notice">{notice}</div>}
         {error && <div className="notice error wide-notice">{error}</div>}
 
+        <section className="show-form-card">
+          <div className="form-heading">
+            <div>
+              <p className="eyebrow">Your storage</p>
+              <h2>Google Drive</h2>
+              <p className="muted">Your permanent podcast files stay in your Drive. Each show receives its own Brand Assets, Templates and Episodes folders.</p>
+            </div>
+            <button
+              type="button"
+              className="secondary-action compact"
+              onClick={connectGoogleDrive}
+              disabled={busy || storageConfig?.providers.googleDrive === false}
+            >
+              {activeGoogleDriveConnections.length > 0 ? "Add Drive account" : "Connect Google Drive"}
+            </button>
+          </div>
+
+          {activeGoogleDriveConnections.length === 0 ? (
+            <p className="muted">No Google Drive account is connected yet.</p>
+          ) : (
+            <div className="archived-list">
+              {activeGoogleDriveConnections.map((connection) => (
+                <article key={connection.id}>
+                  <div>
+                    <strong>{connection.accountEmail || "Google Drive"}</strong>
+                    <span>Connected with drive.file access only</span>
+                  </div>
+                  <div className="inline-actions">
+                    <button
+                      type="button"
+                      className="secondary-action compact"
+                      onClick={() => void setupAllStorage(connection)}
+                      disabled={busy}
+                    >
+                      Prepare all active shows
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
         <section className="shows-actions">
           <div>
             <h2>Active shows</h2>
@@ -427,22 +627,50 @@ export function App() {
         )}
 
         <section className="show-grid">
-          {activeShows.map((show) => (
-            <article className="show-card" key={show.id}>
-              <div className="show-card-topline">
-                <span className="status-pill active-status">Active</span>
-                <span className="storage-pill">Storage setup next</span>
-              </div>
-              <div className="show-avatar">{show.name.slice(0, 1).toUpperCase()}</div>
-              <h3>{show.name}</h3>
-              <p className="host-line">Hosted by {show.hostName}</p>
-              {show.description && <p className="show-description">{show.description}</p>}
-              <div className="show-card-actions">
-                <button type="button" className="secondary-action compact" onClick={() => openEditShow(show)}>Edit</button>
-                <button type="button" className="text-button" onClick={() => void changeShowStatus(show, "archive")} disabled={busy}>Archive</button>
-              </div>
-            </article>
-          ))}
+          {activeShows.map((show) => {
+            const assignedConnection = storageConnections.find(
+              (connection) => connection.id === show.storageConnectionId,
+            );
+            return (
+              <article className="show-card" key={show.id}>
+                <div className="show-card-topline">
+                  <span className="status-pill active-status">Active</span>
+                  <span className="storage-pill">
+                    {assignedConnection?.provider === "google-drive"
+                      ? `Drive · ${assignedConnection.accountEmail || "connected"}`
+                      : "Storage not set"}
+                  </span>
+                </div>
+                <div className="show-avatar">{show.name.slice(0, 1).toUpperCase()}</div>
+                <h3>{show.name}</h3>
+                <p className="host-line">Hosted by {show.hostName}</p>
+                {show.description && <p className="show-description">{show.description}</p>}
+
+                {activeGoogleDriveConnections.length > 0 && (
+                  <div className="form-actions" style={{ marginTop: 12 }}>
+                    {activeGoogleDriveConnections.map((connection) => (
+                      <button
+                        type="button"
+                        className={show.storageConnectionId === connection.id ? "primary-action compact" : "secondary-action compact"}
+                        key={connection.id}
+                        onClick={() => void setupShowStorage(show, connection)}
+                        disabled={busy}
+                      >
+                        {show.storageConnectionId === connection.id
+                          ? "Repair Drive folders"
+                          : `Use ${connection.accountEmail || "Google Drive"}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="show-card-actions">
+                  <button type="button" className="secondary-action compact" onClick={() => openEditShow(show)}>Edit</button>
+                  <button type="button" className="text-button" onClick={() => void changeShowStatus(show, "archive")} disabled={busy}>Archive</button>
+                </div>
+              </article>
+            );
+          })}
 
           {limits.canCreate && (
             <button type="button" className="create-show-tile" onClick={openCreateShow}>
@@ -486,8 +714,7 @@ export function App() {
         )}
       </main>
 
-      <footer>
-        <span>HRTechify · People · Technology · Growth</span>
+      <footer style={{ justifyContent: "flex-end" }}>
         <span>{PLATFORM_CREDIT}</span>
       </footer>
     </div>

@@ -154,6 +154,27 @@ export const updateShowForUser = async (
   return getShowForUser(db, userId, showId);
 };
 
+export const setShowStorageConnectionForUser = async (
+  db: D1DatabaseLike,
+  userId: string,
+  showId: string,
+  storageConnectionId: string,
+): Promise<ShowRow | null> => {
+  const existing = await getShowForUser(db, userId, showId);
+  if (!existing) return null;
+
+  await db
+    .prepare(
+      `UPDATE shows
+       SET storage_connection_id = ?, updated_at = datetime('now')
+       WHERE id = ? AND user_id = ? AND status <> 'deleted'`,
+    )
+    .bind(storageConnectionId, showId, userId)
+    .run();
+
+  return getShowForUser(db, userId, showId);
+};
+
 export const archiveShowForUser = async (
   db: D1DatabaseLike,
   userId: string,

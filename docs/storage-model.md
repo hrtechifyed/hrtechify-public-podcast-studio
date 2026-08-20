@@ -50,6 +50,23 @@ Episode 001/
   captions.vtt
 ```
 
+## Google Drive workspace provisioning
+
+The Google Drive integration creates and manages only folders created for HRTechify Podcast Studio under the user's `drive.file` authorization.
+
+The workspace is provisioned idempotently:
+
+1. Ensure one top-level `HRTechify Podcast Studio` folder created by the application.
+2. Ensure one folder for the selected show beneath that root.
+3. Ensure `Brand Assets`, `Templates`, and `Episodes` subfolders beneath the show folder.
+4. Associate the show with the selected storage connection only after Drive provisioning succeeds.
+
+Application-created folders carry private Drive `appProperties` markers for the workspace role and show ID. These markers let the application rediscover its own folders without asking for broad Drive access or relying only on mutable folder names. If a show is renamed, the application can rename the corresponding show folder while preserving the same workspace.
+
+This phase does not add another D1 folder-ID table. Folder references are rediscovered from the application's Drive metadata when required. Provider file and folder IDs may be persisted later where a production operation benefits from doing so.
+
+A user with exactly one active Google Drive connection may have unassigned active shows provisioned automatically. With multiple connections, the user selects the destination for each show. Switching a show's destination does not delete or move the user's existing files from the previous provider workspace.
+
 ## Storage connection model
 
 A user may connect one or more supported providers. Each show stores an active storage-connection reference so different shows may use different destinations.
@@ -72,4 +89,4 @@ The original source file is never overwritten. Derived audio/video outputs are w
 
 ## Provider access
 
-Provider integrations should use the minimum permissions required. Broad storage access should not be requested unless a future feature genuinely needs it and the user receives clear consent information.
+Provider integrations should use the minimum permissions required. Google Drive storage uses `https://www.googleapis.com/auth/drive.file`, not broad Drive access. Broad storage access should not be requested unless a future feature genuinely needs it and the user receives clear consent information.
