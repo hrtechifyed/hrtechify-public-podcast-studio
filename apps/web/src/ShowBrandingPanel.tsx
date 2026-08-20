@@ -1,6 +1,7 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
 type BrandAssetKind = "show-logo-original" | "profile-photo-original";
+type SelectionChoice = "original" | "background-removed";
 
 interface BrandAssetRecord {
   id: string;
@@ -20,6 +21,20 @@ interface BrandAssetsResponse {
   error?: string;
 }
 
+interface BrandSelection {
+  id: string;
+  choice: SelectionChoice;
+  sourceAssetId: string;
+  selectedAssetId: string;
+  createdTime: string | null;
+}
+
+interface CandidatePreview {
+  sourceAssetId: string;
+  candidate: BrandAssetRecord;
+  previewUrl: string;
+}
+
 interface ShowBrandingPanelProps {
   showId: string;
   showName: string;
@@ -37,6 +52,13 @@ const friendlyBrandError = (code?: string) => {
       return "The image must be 8 MiB or smaller.";
     case "content_length_mismatch":
       return "The upload size changed while sending. Choose the file again.";
+    case "images_binding_not_configured":
+      return "Background removal is not enabled for this deployment yet.";
+    case "background_removal_failed":
+    case "background_removal_empty":
+      return "The background could not be removed from this image. Keep the original or try again.";
+    case "background_candidate_source_mismatch":
+      return "That preview belongs to a different original. Generate a new preview for this image.";
     case "show_storage_connection_mismatch":
       return "This show is assigned to a different Drive account. Refresh the page and try again.";
     case "google_drive_authorization_expired":
@@ -60,6 +82,9 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
   const [assets, setAssets] = useState<BrandAssetRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadingKind, setUploadingKind] = useState<BrandAssetKind | null>(null);
+  const [processingSourceId, setProcessingSourceId] = useState<string | null>(null);
+  const [candidate, setCandidate] = useState<CandidatePreview | null>(null);
+  const [selectionBySourceId, setSelectionBySourceId] = useState<Record<string, BrandSelection | null>>({});
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -72,6 +97,17 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
     [assets],
   );
 
+  const loadSelection = async (sourceAssetId: string) => {
+    const url = new URL("/api/branding/background-removal/selection", window.location.origin);
+    url.searchParams.set("showId", showId);
+    url.searchParams.set("connectionId", connectionId);
+    url.searchParams.set("sourceAssetId", sourceAssetId);
+    const response = await fetch(url.toString(), { credentials: "same-origin" });
+    const payload = (await response.json().catch(() => null)) as { selection?: BrandSelection | null; error?: string } | null;
+    if (!response.ok) throw new Error(friendlyBrandError(payload?.error));
+    setSelectionBySourceId((current) => ({ ...current, [sourceAssetId]: payload?.selection ?? null }));
+  };
+
   const loadAssets = async () => {
     setLoading(true);
     setError(null);
@@ -82,7 +118,15 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
       const response = await fetch(url.toString(), { credentials: "same-origin" });
       const payload = (await response.json().catch(() => null)) as BrandAssetsResponse | null;
       if (!response.ok) throw new Error(friendlyBrandError(payload?.error));
-      setAssets(payload?.assets ?? []);
+      const nextAssets = payload?.assets ?? [];
+      setAssets(nextAssets);
+      const currentLogo = nextAssets.find((asset) => asset.assetKind === "show-logo-original");
+      const currentProfile = nextAssets.find((asset) => asset.assetKind === "profile-photo-original");
+      await Promise.all(
+        [currentLogo, currentProfile]
+          .filter((asset): asset is BrandAssetRecord => Boolean(asset))
+          .map((asset) => loadSelection(asset.id)),
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load branding assets.");
     } finally {
@@ -91,6 +135,8 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
   };
 
   useEffect(() => {
+    setCandidate(null);
+    setSelectionBySourceId({});
     void loadAssets();
   }, [showId, connectionId]);
 
@@ -134,6 +180,7 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
       const payload = (await response.json().catch(() => null)) as BrandAssetsResponse | null;
       if (!response.ok) throw new Error(friendlyBrandError(payload?.error));
 
+      setCandidate(null);
       setNotice(
         assetKind === "show-logo-original"
           ? `Original logo saved for ${showName}.`
@@ -147,35 +194,120 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
     }
   };
 
+  const generateBackgroundPreview = async (source: BrandAssetRecord) => {
+    setError(null);
+    setNotice(null);
+    setProcessingSourceId(source.id);
+    try {
+      const response = await fetch("/api/branding/background-removal/preview", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ showId, connectionId, sourceAssetId: source.id }),
+      });
+      const payload = (await response.json().catch(() => null)) as (CandidatePreview & { error?: string }) | null;
+      if (!response.ok || !payload?.candidate || !payload.previewUrl) {
+        throw new Error(friendlyBrandError(payload?.error));
+      }
+      setCandidate(payload);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not create a background-removed preview.");
+    } finally {
+      setProcessingSourceId(null);
+    }
+  };
+
+  const selectBrandVersion = async (
+    source: BrandAssetRecord,
+    choice: SelectionChoice,
+    candidateAssetId?: string,
+  ) => {
+    setError(null);
+    setNotice(null);
+    setProcessingSourceId(source.id);
+    try {
+      const response = await fetch("/api/branding/background-removal/selection", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          showId,
+          connectionId,
+          sourceAssetId: source.id,
+          choice,
+          ...(candidateAssetId ? { candidateAssetId } : {}),
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as { selection?: BrandSelection; error?: string } | null;
+      if (!response.ok || !payload?.selection) throw new Error(friendlyBrandError(payload?.error));
+      setSelectionBySourceId((current) => ({ ...current, [source.id]: payload.selection! }));
+      setCandidate(null);
+      setNotice(
+        choice === "background-removed"
+          ? "Background-removed version accepted. The original remains unchanged in Drive."
+          : "Original version kept. Any generated preview remains separate and does not replace it.",
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not save your branding choice.");
+    } finally {
+      setProcessingSourceId(null);
+    }
+  };
+
   const assetControl = (
     title: string,
     assetKind: BrandAssetKind,
     current: BrandAssetRecord | null,
-  ) => (
-    <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-      <strong>{title}</strong>
-      <p className="muted" style={{ margin: "6px 0 10px" }}>
-        {current ? `${current.name} · ${formatBytes(current.sizeBytes)}` : "No original uploaded yet."}
-      </p>
-      <div className="inline-actions">
-        <label className="secondary-action compact" style={{ cursor: uploadingKind ? "not-allowed" : "pointer" }}>
-          {uploadingKind === assetKind ? "Uploading…" : current ? "Upload a new original" : "Upload original"}
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            hidden
-            disabled={Boolean(uploadingKind)}
-            onChange={(event) => void uploadAsset(assetKind, event)}
-          />
-        </label>
-        {current?.webViewLink && (
-          <a className="text-button" href={current.webViewLink} target="_blank" rel="noreferrer">
-            Open in Drive
-          </a>
+  ) => {
+    const selection = current ? selectionBySourceId[current.id] : null;
+    const processing = current ? processingSourceId === current.id : false;
+    return (
+      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+        <strong>{title}</strong>
+        <p className="muted" style={{ margin: "6px 0 6px" }}>
+          {current ? `${current.name} · ${formatBytes(current.sizeBytes)}` : "No original uploaded yet."}
+        </p>
+        {current && (
+          <p className="muted" style={{ margin: "0 0 10px" }}>
+            {selection
+              ? `Selected for production: ${selection.choice === "background-removed" ? "Background removed" : "Original"}`
+              : "Production version not chosen yet."}
+          </p>
         )}
+        <div className="inline-actions">
+          <label className="secondary-action compact" style={{ cursor: uploadingKind ? "not-allowed" : "pointer" }}>
+            {uploadingKind === assetKind ? "Uploading…" : current ? "Upload a new original" : "Upload original"}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              hidden
+              disabled={Boolean(uploadingKind) || Boolean(processingSourceId)}
+              onChange={(event) => void uploadAsset(assetKind, event)}
+            />
+          </label>
+          {current && (
+            <button
+              type="button"
+              className="secondary-action compact"
+              disabled={Boolean(processingSourceId) || Boolean(uploadingKind)}
+              onClick={() => void generateBackgroundPreview(current)}
+            >
+              {processing ? "Removing background…" : "Remove background"}
+            </button>
+          )}
+          {current?.webViewLink && (
+            <a className="text-button" href={current.webViewLink} target="_blank" rel="noreferrer">
+              Open original
+            </a>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  const candidateSource = candidate
+    ? assets.find((asset) => asset.id === candidate.sourceAssetId) ?? null
+    : null;
 
   return (
     <section
@@ -200,6 +332,68 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
           {assetControl("Show logo", "show-logo-original", newestLogo)}
           {assetControl("Profile photo", "profile-photo-original", newestProfile)}
+        </div>
+      )}
+
+      {candidate && candidateSource && (
+        <div
+          style={{
+            marginTop: 16,
+            padding: 14,
+            border: "1px solid rgba(255,255,255,0.16)",
+            borderRadius: 12,
+          }}
+        >
+          <strong>Background-removed preview</strong>
+          <p className="muted" style={{ margin: "5px 0 10px" }}>
+            Nothing changes until you choose. The original remains stored unchanged.
+          </p>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+            <div
+              style={{
+                width: 180,
+                minHeight: 140,
+                display: "grid",
+                placeItems: "center",
+                borderRadius: 10,
+                backgroundImage: "linear-gradient(45deg, rgba(255,255,255,.08) 25%, transparent 25%), linear-gradient(-45deg, rgba(255,255,255,.08) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(255,255,255,.08) 75%), linear-gradient(-45deg, transparent 75%, rgba(255,255,255,.08) 75%)",
+                backgroundSize: "20px 20px",
+                backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
+              }}
+            >
+              <img
+                src={candidate.previewUrl}
+                alt={`Background-removed preview for ${candidateSource.name}`}
+                style={{ maxWidth: "100%", maxHeight: 180, objectFit: "contain" }}
+              />
+            </div>
+            <div className="inline-actions">
+              <button
+                type="button"
+                className="primary-action compact"
+                disabled={Boolean(processingSourceId)}
+                onClick={() => void selectBrandVersion(candidateSource, "background-removed", candidate.candidate.id)}
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                className="secondary-action compact"
+                disabled={Boolean(processingSourceId)}
+                onClick={() => void generateBackgroundPreview(candidateSource)}
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                disabled={Boolean(processingSourceId)}
+                onClick={() => void selectBrandVersion(candidateSource, "original")}
+              >
+                Keep Original
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
