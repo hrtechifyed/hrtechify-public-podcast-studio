@@ -14,7 +14,10 @@
     "required": [
       "SESSION_SIGNING_KEY",
       "GOOGLE_AUTH_CLIENT_ID",
-      "GOOGLE_AUTH_CLIENT_SECRET"
+      "GOOGLE_AUTH_CLIENT_SECRET",
+      "GOOGLE_DRIVE_CLIENT_ID",
+      "GOOGLE_DRIVE_CLIENT_SECRET",
+      "TOKEN_ENCRYPTION_KEY"
     ]
   },
   "assets": {
