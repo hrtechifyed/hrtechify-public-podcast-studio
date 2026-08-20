@@ -65,7 +65,11 @@ Application-created folders carry private Drive `appProperties` markers for the 
 
 This phase does not add another D1 folder-ID table. Folder references are rediscovered from the application's Drive metadata when required. Provider file and folder IDs may be persisted later where a production operation benefits from doing so.
 
-A user with exactly one active Google Drive connection may have unassigned active shows provisioned automatically. With multiple connections, the user selects the destination for each show. Switching a show's destination does not delete or move the user's existing files from the previous provider workspace.
+A user with exactly one active Google Drive connection has active show workspaces re-checked idempotently when the Studio loads. This creates missing folders and repairs app-owned renamed folders without duplicating them. The UI also provides `Prepare all active shows` and per-show `Repair Drive folders` controls so provisioning can be retried explicitly.
+
+The Google Drive API must be enabled in the same Google Cloud project as the Drive OAuth client. If it is disabled, the Worker returns the explicit `google_drive_api_not_enabled` error so the Studio can show an actionable message rather than a generic failure.
+
+With multiple connections, the user selects the destination for each show. Switching a show's destination does not delete or move the user's existing files from the previous provider workspace.
 
 ## Storage connection model
 
@@ -78,6 +82,12 @@ Example:
 - Show 3 → Google Drive
 
 The user should not need to reconnect the same provider for every show unless provider authorization requires it.
+
+## Show deletion and storage ownership
+
+Deleting a show from HRTechify Podcast Studio marks the show as deleted in Studio metadata and removes it from the user's show list. The show no longer counts toward the active-show limit.
+
+Deleting a show from the Studio does **not** delete the user's Google Drive files or folders. User-owned cloud files remain in the user's storage account so an application action cannot unexpectedly destroy creator media. A future explicit file-deletion feature, if added, must require separate clear user confirmation.
 
 ## File ownership
 
