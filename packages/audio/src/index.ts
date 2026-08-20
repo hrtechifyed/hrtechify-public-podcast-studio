@@ -8,12 +8,16 @@ export type TechnicalAdjustment =
   | "compression"
   | "peak_protection";
 
-export type SpeechEditKind =
-  | "unusual_pause"
-  | "false_start"
-  | "repeated_speech"
-  | "fumble"
-  | "spoken_content_removal";
+export const SPEECH_EDIT_KINDS = [
+  "unusual_pause",
+  "false_start",
+  "repeated_speech",
+  "fumble",
+  "spoken_content_removal",
+] as const;
+
+export type SpeechEditKind = (typeof SPEECH_EDIT_KINDS)[number];
+export type SpeechEditDecision = "apply" | "keep_original";
 
 export interface SpeechEditProposal {
   id: string;
@@ -22,7 +26,7 @@ export interface SpeechEditProposal {
   endMs: number;
   explanation: string;
   approvalRequired: true;
-  decision?: "apply" | "keep_original";
+  decision?: SpeechEditDecision;
 }
 
 export const ORIGINAL_RECORDING_IS_IMMUTABLE = true as const;
