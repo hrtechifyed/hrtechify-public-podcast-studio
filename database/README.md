@@ -2,6 +2,12 @@
 
 HRTechify Public Podcast Studio uses Cloudflare D1 for small application metadata. User media does not belong in D1.
 
+## Production database
+
+The production Worker binding is `DB` and points to the Cloudflare D1 database named `hrtechify-podcast-prod`.
+
+The D1 database identifier is intentionally present in Wrangler configuration because it is a resource identifier, not a credential. Cloudflare API tokens, session keys, OAuth client secrets and user data must never be committed.
+
 ## Current schema
 
 `migrations/0001_multi_user_foundation.sql` introduces:
@@ -27,7 +33,22 @@ Authentication provider subjects are mapped to an internal user ID. Protected ro
 
 ## Applying migrations
 
-A D1 database and binding are intentionally not hard-coded in the public repository. Once the Cloudflare environment is created, bind it to the Worker as `DB` and apply migrations using Wrangler.
+The Worker Wrangler configuration points at `../../database/migrations`, so both existing migrations can be applied through the Worker workspace.
+
+From the repository root:
+
+```bash
+npm run db:migrations:list
+npm run db:migrate:remote
+```
+
+For local development only:
+
+```bash
+npm run db:migrate:local
+```
+
+Wrangler records applied migrations in D1 and will only apply migrations that have not already been recorded.
 
 Do not commit credentials, user data or production secrets. Media bytes remain in user-selected cloud storage rather than D1.
 
