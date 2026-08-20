@@ -1,4 +1,8 @@
 import type { WorkerEnv } from "./db";
+import {
+  canDownloadOwnedAsset,
+  isOwnedShowAsset,
+} from "./drive-file-policy";
 import { buildDriveMultipartUpload, type SmallDriveUploadFolder } from "./drive-upload";
 import type { StorageConnectionRow } from "./storage-store";
 import { decryptStorageToken } from "./token-crypto";
@@ -21,6 +25,10 @@ interface DriveFile {
   size?: string;
   webViewLink?: string;
   parents?: string[];
+  trashed?: boolean;
+  capabilities?: {
+    canDownload?: boolean;
+  };
   appProperties?: Record<string, string>;
 }
 
@@ -60,6 +68,14 @@ export interface GoogleDriveStoredFile {
   webViewLink: string | null;
   parents: string[];
   appProperties: Record<string, string>;
+  canDownload: boolean;
+}
+
+export interface GoogleDriveFileDownload {
+  file: GoogleDriveStoredFile;
+  body: ReadableStream<Uint8Array> | null;
+  sourceContentType: string | null;
+  contentLength: string | null;
 }
 
 export class GoogleDriveError extends Error {
@@ -74,7 +90,7 @@ export class GoogleDriveError extends Error {
 
 const qEscape = (value: string) => value.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
 
-const driveFields = "id,name,mimeType,size,webViewLink,parents,appProperties";
+const driveFields = "id,name,mimeType,size,webViewLink,parents,appProperties,trashed,capabilities(canDownload)";
 
 const refreshGoogleDriveAccessToken = async (
   env: WorkerEnv,
@@ -324,7 +340,17 @@ const serializeStoredFile = (file: DriveFile): GoogleDriveStoredFile => {
     webViewLink: file.webViewLink ?? null,
     parents: file.parents ?? [],
     appProperties: file.appProperties ?? {},
+    canDownload: file.capabilities?.canDownload === true,
   };
+};
+
+const getDriveFile = async (
+  accessToken: string,
+  fileId: string,
+): Promise<DriveFile> => {
+  const url = new URL(`${DRIVE_API}/files/${encodeURIComponent(fileId)}`);
+  url.searchParams.set("fields", driveFields);
+  return driveJson<DriveFile>(accessToken, url.toString());
 };
 
 const uploadSmallFileToFolder = async (
@@ -412,6 +438,29 @@ export const createGoogleDriveSession = async (
     };
   };
 
+  const getOwnedShowAsset = async (
+    showId: string,
+    showName: string,
+    fileId: string,
+  ) => {
+    const [workspace, file] = await Promise.all([
+      ensureShowWorkspace(showId, showName),
+      getDriveFile(accessToken, fileId),
+    ]);
+    const folder = file.appProperties?.folder;
+    const expectedParentId = folder === "brand-assets"
+      ? workspace.folders.brandAssets
+      : folder === "episodes"
+        ? workspace.folders.episodes
+        : "";
+
+    if (!expectedParentId || !isOwnedShowAsset(file, showId, expectedParentId)) {
+      throw new GoogleDriveError("google_drive_file_not_found", 404);
+    }
+
+    return file;
+  };
+
   return {
     ensureShowWorkspace,
     async uploadSmallFile(
@@ -433,6 +482,35 @@ export const createGoogleDriveSession = async (
         showId,
         ...input,
       });
+    },
+    async getOwnedFile(showId: string, showName: string, fileId: string) {
+      return serializeStoredFile(await getOwnedShowAsset(showId, showName, fileId));
+    },
+    async downloadOwnedFile(
+      showId: string,
+      showName: string,
+      fileId: string,
+    ): Promise<GoogleDriveFileDownload> {
+      const file = await getOwnedShowAsset(showId, showName, fileId);
+      if (!canDownloadOwnedAsset(file)) {
+        throw new GoogleDriveError("google_drive_file_not_downloadable", 409);
+      }
+
+      const url = new URL(`${DRIVE_API}/files/${encodeURIComponent(file.id)}`);
+      url.searchParams.set("alt", "media");
+      const response = await fetch(url.toString(), {
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) {
+        throw await driveErrorFromResponse(response);
+      }
+
+      return {
+        file: serializeStoredFile(file),
+        body: response.body,
+        sourceContentType: response.headers.get("content-type"),
+        contentLength: response.headers.get("content-length"),
+      };
     },
   };
 };
