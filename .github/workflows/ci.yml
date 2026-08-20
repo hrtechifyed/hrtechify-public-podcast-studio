@@ -29,3 +29,6 @@ jobs:
 
       - name: Build web application
         run: npm run build
+
+      - name: Validate Worker deployment build
+        run: npm run build --workspace @hrtechify/worker
