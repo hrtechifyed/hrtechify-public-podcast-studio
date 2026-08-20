@@ -45,6 +45,7 @@ export interface EditorialProposalRow {
 }
 
 const EDIT_KIND_SET = new Set<string>(SPEECH_EDIT_KINDS);
+const EDIT_DECISION_SET = new Set<SpeechEditDecision>(["apply", "keep_original"]);
 
 const cleanAnalyzerVersion = (value: string) => {
   const cleaned = value.trim();
@@ -242,7 +243,7 @@ const latestCompletedRunId = async (
       `SELECT id
        FROM episode_edit_analysis_runs
        WHERE user_id = ? AND episode_id = ? AND status = 'completed'
-       ORDER BY completed_at DESC, created_at DESC
+       ORDER BY sequence DESC
        LIMIT 1`,
     )
     .bind(userId, episodeId)
@@ -285,9 +286,7 @@ export const recordEditorialDecision = async (
   decision: SpeechEditDecision,
 ) => {
   if (episode.user_id !== userId) throw new Error("episode_not_found");
-  if (!new Set<SpeechEditDecision>(["apply", "keep_original"]).has(decision)) {
-    throw new Error("edit_decision_invalid");
-  }
+  if (!EDIT_DECISION_SET.has(decision)) throw new Error("edit_decision_invalid");
   if (!["awaiting_edit_approval", "awaiting_render_confirmation"].includes(episode.status)) {
     throw new Error("edit_decisions_locked");
   }
