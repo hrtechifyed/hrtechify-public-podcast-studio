@@ -1,4 +1,4 @@
-import { MAX_ACTIVE_SHOWS_PER_USER } from "@hrtechify/shared";
+import { MAX_SHOWS_PER_USER } from "@hrtechify/shared";
 import type { D1DatabaseLike } from "./db";
 
 export interface ShowRow {
@@ -9,6 +9,9 @@ export interface ShowRow {
   description: string | null;
   status: "active" | "archived" | "deleted";
   storage_connection_id: string | null;
+  drive_show_folder_id: string | null;
+  drive_episodes_folder_id: string | null;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -27,7 +30,7 @@ export interface UpdateShowInput {
 
 export class ShowLimitError extends Error {
   constructor() {
-    super("active_show_limit_reached");
+    super("show_limit_reached");
     this.name = "ShowLimitError";
   }
 }
@@ -45,17 +48,19 @@ const cleanDescription = (value?: string) => {
   return cleaned;
 };
 
+const showSelect = `SELECT id, user_id, name, host_display_name, description, status,
+  storage_connection_id, drive_show_folder_id, drive_episodes_folder_id, deleted_at,
+  created_at, updated_at FROM shows`;
+
 export const listShowsForUser = async (
   db: D1DatabaseLike,
   userId: string,
 ): Promise<ShowRow[]> => {
   const { results } = await db
     .prepare(
-      `SELECT id, user_id, name, host_display_name, description, status,
-              storage_connection_id, created_at, updated_at
-       FROM shows
+      `${showSelect}
        WHERE user_id = ? AND status <> 'deleted'
-       ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, created_at DESC`,
+       ORDER BY created_at DESC`,
     )
     .bind(userId)
     .all<ShowRow>();
@@ -70,16 +75,14 @@ export const getShowForUser = async (
 ): Promise<ShowRow | null> => {
   return db
     .prepare(
-      `SELECT id, user_id, name, host_display_name, description, status,
-              storage_connection_id, created_at, updated_at
-       FROM shows
+      `${showSelect}
        WHERE id = ? AND user_id = ? AND status <> 'deleted'`,
     )
     .bind(showId, userId)
     .first<ShowRow>();
 };
 
-export const countActiveShowsForUser = async (
+export const countShowsForUser = async (
   db: D1DatabaseLike,
   userId: string,
 ): Promise<number> => {
@@ -87,7 +90,7 @@ export const countActiveShowsForUser = async (
     .prepare(
       `SELECT COUNT(*) AS count
        FROM shows
-       WHERE user_id = ? AND status = 'active'`,
+       WHERE user_id = ? AND status <> 'deleted'`,
     )
     .bind(userId)
     .first<{ count: number }>();
@@ -100,8 +103,8 @@ export const createShowForUser = async (
   userId: string,
   input: CreateShowInput,
 ): Promise<ShowRow> => {
-  const activeCount = await countActiveShowsForUser(db, userId);
-  if (activeCount >= MAX_ACTIVE_SHOWS_PER_USER) throw new ShowLimitError();
+  const showCount = await countShowsForUser(db, userId);
+  if (showCount >= MAX_SHOWS_PER_USER) throw new ShowLimitError();
 
   const id = crypto.randomUUID();
   const name = cleanText(input.name, "show_name", 120);
@@ -118,7 +121,10 @@ export const createShowForUser = async (
       .bind(id, userId, name, hostDisplayName, description)
       .run();
   } catch (error) {
-    if (error instanceof Error && error.message.includes("active_show_limit_reached")) {
+    if (
+      error instanceof Error &&
+      (error.message.includes("show_limit_reached") || error.message.includes("active_show_limit_reached"))
+    ) {
       throw new ShowLimitError();
     }
     throw error;
@@ -154,6 +160,52 @@ export const updateShowForUser = async (
   return getShowForUser(db, userId, showId);
 };
 
+export const saveGoogleDriveWorkspaceForShow = async (
+  db: D1DatabaseLike,
+  userId: string,
+  showId: string,
+  showFolderId: string,
+  episodesFolderId: string,
+): Promise<ShowRow | null> => {
+  const existing = await getShowForUser(db, userId, showId);
+  if (!existing) return null;
+  const cleanedShowFolder = cleanText(showFolderId, "drive_show_folder_id", 256);
+  const cleanedEpisodesFolder = cleanText(episodesFolderId, "drive_episodes_folder_id", 256);
+
+  await db
+    .prepare(
+      `UPDATE shows
+       SET storage_connection_id = 'google-drive',
+           drive_show_folder_id = ?,
+           drive_episodes_folder_id = ?,
+           updated_at = datetime('now')
+       WHERE id = ? AND user_id = ? AND status <> 'deleted'`,
+    )
+    .bind(cleanedShowFolder, cleanedEpisodesFolder, showId, userId)
+    .run();
+
+  return getShowForUser(db, userId, showId);
+};
+
+export const deleteShowForUser = async (
+  db: D1DatabaseLike,
+  userId: string,
+  showId: string,
+): Promise<boolean> => {
+  const show = await getShowForUser(db, userId, showId);
+  if (!show) return false;
+
+  await db
+    .prepare(
+      `UPDATE shows
+       SET status = 'deleted', deleted_at = datetime('now'), updated_at = datetime('now')
+       WHERE id = ? AND user_id = ? AND status <> 'deleted'`,
+    )
+    .bind(showId, userId)
+    .run();
+  return true;
+};
+
 export const archiveShowForUser = async (
   db: D1DatabaseLike,
   userId: string,
@@ -182,9 +234,6 @@ export const restoreShowForUser = async (
   const show = await getShowForUser(db, userId, showId);
   if (!show) return null;
   if (show.status === "active") return show;
-
-  const activeCount = await countActiveShowsForUser(db, userId);
-  if (activeCount >= MAX_ACTIVE_SHOWS_PER_USER) throw new ShowLimitError();
 
   await db
     .prepare(
