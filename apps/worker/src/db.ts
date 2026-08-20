@@ -58,7 +58,7 @@ export interface WorkflowInstanceLike {
 export interface WorkflowBindingLike {
   create(options: {
     id: string;
-    params: { renderJobId: string };
+    params: { jobId: string };
   }): Promise<WorkflowInstanceLike>;
 }
 
