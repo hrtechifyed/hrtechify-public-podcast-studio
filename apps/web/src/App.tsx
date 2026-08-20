@@ -106,6 +106,9 @@ export function App() {
   });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [storageBusyShowIds, setStorageBusyShowIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -172,9 +175,16 @@ export function App() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ showId, connectionId }),
     });
-    const payload = await jsonOrNull<{ error?: string }>(response);
+    const payload = await jsonOrNull<{
+      error?: string;
+      workspace?: { showId: string; connectionId: string };
+    }>(response);
     if (!response.ok) throw new Error(friendlyStorageError(payload?.error));
+    if (!payload?.workspace || payload.workspace.showId !== showId) {
+      throw new Error("Google Drive did not confirm the requested show workspace.");
+    }
     if (!quiet) setNotice("Google Drive folders are ready for this show.");
+    return payload.workspace;
   };
 
   const provisionAllActiveShows = async (
@@ -429,16 +439,27 @@ export function App() {
   };
 
   const setupShowStorage = async (show: Show, connection: StorageConnection) => {
-    setBusy(true);
+    setStorageBusyShowIds((current) => {
+      const next = new Set(current);
+      next.add(show.id);
+      return next;
+    });
     setError(null);
     setNotice(null);
     try {
-      await provisionShowStorage(show.id, connection.id);
+      await provisionShowStorage(show.id, connection.id, true);
       await loadShows();
+      setNotice(
+        `Drive folders for "${show.name}" are ready in ${connection.accountEmail || "Google Drive"}. No other show was changed.`,
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not prepare Google Drive storage.");
     } finally {
-      setBusy(false);
+      setStorageBusyShowIds((current) => {
+        const next = new Set(current);
+        next.delete(show.id);
+        return next;
+      });
     }
   };
 
@@ -609,6 +630,7 @@ export function App() {
               <p className="muted">
                 Your permanent podcast files stay in your Drive. Each show receives its own Brand Assets, Templates and Episodes folders.
                 {activeGoogleDriveConnections.length > 1 && " You have multiple Drive accounts connected. Choose the specific account below; existing shows assigned to another Drive account will not be moved."}
+                {" Show-level Repair actions affect only the show whose card you clicked."}
               </p>
             </div>
             <button
@@ -698,6 +720,7 @@ export function App() {
             const assignedConnection = storageConnections.find(
               (connection) => connection.id === show.storageConnectionId,
             );
+            const showStorageBusy = storageBusyShowIds.has(show.id);
             return (
               <article className="show-card" key={show.id}>
                 <div className="show-card-topline">
@@ -721,20 +744,22 @@ export function App() {
                         className={show.storageConnectionId === connection.id ? "primary-action compact" : "secondary-action compact"}
                         key={connection.id}
                         onClick={() => void setupShowStorage(show, connection)}
-                        disabled={busy}
+                        disabled={busy || showStorageBusy}
                       >
-                        {show.storageConnectionId === connection.id
-                          ? `Repair in ${connection.accountEmail || "Google Drive"}`
-                          : `Use ${connection.accountEmail || "Google Drive"}`}
+                        {showStorageBusy
+                          ? "Working on this show…"
+                          : show.storageConnectionId === connection.id
+                            ? `Repair this show in ${connection.accountEmail || "Google Drive"}`
+                            : `Use ${connection.accountEmail || "Google Drive"} for this show`}
                       </button>
                     ))}
                   </div>
                 )}
 
                 <div className="show-card-actions">
-                  <button type="button" className="secondary-action compact" onClick={() => openEditShow(show)}>Edit</button>
-                  <button type="button" className="text-button" onClick={() => void changeShowStatus(show, "archive")} disabled={busy}>Archive</button>
-                  <button type="button" className="text-button" onClick={() => void deleteShow(show)} disabled={busy}>Delete</button>
+                  <button type="button" className="secondary-action compact" onClick={() => openEditShow(show)} disabled={busy || showStorageBusy}>Edit</button>
+                  <button type="button" className="text-button" onClick={() => void changeShowStatus(show, "archive")} disabled={busy || showStorageBusy}>Archive</button>
+                  <button type="button" className="text-button" onClick={() => void deleteShow(show)} disabled={busy || showStorageBusy}>Delete</button>
                 </div>
               </article>
             );
