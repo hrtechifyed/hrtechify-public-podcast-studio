@@ -5,9 +5,25 @@ import {
   parseDriveFileReadRoute,
 } from "./drive-file-policy";
 import {
+  createResumableUploadToken,
+  MAX_RESUMABLE_CHUNK_BYTES,
+  parseResumableContentRange,
+  parseResumableUploadStartBody,
+  readResumableUploadToken,
+  RESUMABLE_CHUNK_GRANULARITY_BYTES,
+  RESUMABLE_UPLOAD_TOKEN_TTL_MS,
+  ResumableUploadValidationError,
+} from "./drive-resumable";
+import {
   parseSmallDriveUploadBody,
   SmallDriveUploadValidationError,
 } from "./drive-upload";
+import {
+  queryGoogleDriveResumableStatus,
+  startGoogleDriveResumableUpload,
+  uploadGoogleDriveResumableChunk,
+  type ResumableChunkResult,
+} from "./google-drive-resumable";
 import { createGoogleDriveSession, GoogleDriveError } from "./google-drive";
 import { getShowForUser } from "./shows";
 import {
@@ -18,6 +34,10 @@ import {
 import { upsertUserFromIdentity } from "./users";
 
 const SMALL_UPLOAD_PATH = "/api/storage/google-drive/files/small";
+const RESUMABLE_START_PATH = "/api/storage/google-drive/files/resumable/start";
+const RESUMABLE_CHUNK_PATH = "/api/storage/google-drive/files/resumable/chunk";
+const RESUMABLE_STATUS_PATH = "/api/storage/google-drive/files/resumable/status";
+const UPLOAD_TOKEN_HEADER = "x-hrtechify-upload-token";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -72,6 +92,40 @@ const queryValue = (url: URL, name: string) => {
   return value;
 };
 
+const requireUploadTokenSecret = (env: WorkerEnv) => {
+  if (!env.TOKEN_ENCRYPTION_KEY) {
+    throw new GoogleDriveError("google_drive_not_configured", 503);
+  }
+  return env.TOKEN_ENCRYPTION_KEY;
+};
+
+const verifyCompletedOriginalRecording = async (
+  env: WorkerEnv,
+  userId: string,
+  connection: StorageConnectionRow,
+  show: { id: string; name: string },
+  expectedTotalBytes: number,
+  result: ResumableChunkResult,
+) => {
+  if (!result.complete || !result.file) return result;
+
+  const drive = await createGoogleDriveSession(env, userId, connection);
+  const verified = await drive.getOwnedFile(show.id, show.name, result.file.id);
+  if (
+    verified.appProperties.assetKind !== "original-recording" ||
+    verified.appProperties.immutable !== "true" ||
+    verified.sizeBytes !== expectedTotalBytes
+  ) {
+    throw new GoogleDriveError("google_drive_resumable_completion_invalid", 502);
+  }
+
+  return {
+    complete: true,
+    nextOffset: verified.sizeBytes,
+    file: verified,
+  } satisfies ResumableChunkResult;
+};
+
 export const handleDriveFileApi = async (
   request: Request,
   url: URL,
@@ -80,12 +134,25 @@ export const handleDriveFileApi = async (
   if (!url.pathname.startsWith("/api/storage/google-drive/files")) return null;
 
   const isSmallUpload = url.pathname === SMALL_UPLOAD_PATH;
-  const readRoute = isSmallUpload ? null : parseDriveFileReadRoute(url.pathname);
+  const isResumableStart = url.pathname === RESUMABLE_START_PATH;
+  const isResumableChunk = url.pathname === RESUMABLE_CHUNK_PATH;
+  const isResumableStatus = url.pathname === RESUMABLE_STATUS_PATH;
+  const isResumableRoute = isResumableStart || isResumableChunk || isResumableStatus;
+  const readRoute = isSmallUpload || isResumableRoute ? null : parseDriveFileReadRoute(url.pathname);
 
   if (isSmallUpload && request.method !== "POST") {
     return json({ error: "method_not_allowed" }, 405);
   }
-  if (!isSmallUpload && (!readRoute || request.method !== "GET")) {
+  if (isResumableStart && request.method !== "POST") {
+    return json({ error: "method_not_allowed" }, 405);
+  }
+  if (isResumableChunk && request.method !== "PUT") {
+    return json({ error: "method_not_allowed" }, 405);
+  }
+  if (isResumableStatus && request.method !== "POST") {
+    return json({ error: "method_not_allowed" }, 405);
+  }
+  if (!isSmallUpload && !isResumableRoute && (!readRoute || request.method !== "GET")) {
     return json({ error: "method_not_allowed" }, 405);
   }
 
@@ -123,6 +190,108 @@ export const handleDriveFileApi = async (
         },
         201,
       );
+    }
+
+    if (isResumableStart) {
+      const input = parseResumableUploadStartBody(await parseBody(request));
+      const { show, connection } = await loadAssignedDriveContext(
+        db,
+        identity.userId,
+        input.showId,
+        input.connectionId,
+      );
+      const started = await startGoogleDriveResumableUpload(env, identity.userId, connection, {
+        showId: show.id,
+        showName: show.name,
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        totalBytes: input.totalBytes,
+      });
+      const uploadToken = await createResumableUploadToken(
+        { ...input, sessionUrl: started.sessionUrl },
+        requireUploadTokenSecret(env),
+        identity.userId,
+      );
+      await markStorageConnectionUsed(db, identity.userId, connection.id);
+
+      return json(
+        {
+          showId: show.id,
+          connectionId: connection.id,
+          provider: "google-drive",
+          uploadToken,
+          totalBytes: input.totalBytes,
+          maxChunkBytes: MAX_RESUMABLE_CHUNK_BYTES,
+          chunkGranularityBytes: RESUMABLE_CHUNK_GRANULARITY_BYTES,
+          tokenExpiresInSeconds: Math.floor(RESUMABLE_UPLOAD_TOKEN_TTL_MS / 1000),
+        },
+        201,
+      );
+    }
+
+    if (isResumableChunk || isResumableStatus) {
+      const token = request.headers.get(UPLOAD_TOKEN_HEADER) ?? "";
+      const payload = await readResumableUploadToken(
+        token,
+        requireUploadTokenSecret(env),
+        identity.userId,
+      );
+      const { show, connection } = await loadAssignedDriveContext(
+        db,
+        identity.userId,
+        payload.showId,
+        payload.connectionId,
+      );
+
+      let result: ResumableChunkResult;
+      if (isResumableChunk) {
+        const parsedRange = parseResumableContentRange(
+          request.headers.get("content-range"),
+          request.headers.get("content-length"),
+          payload.totalBytes,
+        );
+        result = await uploadGoogleDriveResumableChunk(env, identity.userId, connection, {
+          sessionUrl: payload.sessionUrl,
+          contentRange: `bytes ${parsedRange.start}-${parsedRange.end}/${parsedRange.totalBytes}`,
+          contentLength: parsedRange.length,
+          mimeType: payload.mimeType,
+          body: request.body,
+        });
+      } else {
+        result = await queryGoogleDriveResumableStatus(env, identity.userId, connection, {
+          sessionUrl: payload.sessionUrl,
+          totalBytes: payload.totalBytes,
+        });
+      }
+
+      result = await verifyCompletedOriginalRecording(
+        env,
+        identity.userId,
+        connection,
+        show,
+        payload.totalBytes,
+        result,
+      );
+      await markStorageConnectionUsed(db, identity.userId, connection.id);
+
+      if (!result.complete) {
+        return json({
+          complete: false,
+          showId: show.id,
+          connectionId: connection.id,
+          nextOffset: result.nextOffset,
+          totalBytes: payload.totalBytes,
+        }, 202);
+      }
+
+      return json({
+        complete: true,
+        showId: show.id,
+        connectionId: connection.id,
+        provider: "google-drive",
+        file: result.file,
+        openUrl: result.file?.webViewLink ?? null,
+      }, 201);
     }
 
     if (!readRoute) return json({ error: "method_not_allowed" }, 405);
@@ -179,6 +348,10 @@ export const handleDriveFileApi = async (
 
     if (error instanceof SmallDriveUploadValidationError) {
       return json({ error: error.code }, 400);
+    }
+
+    if (error instanceof ResumableUploadValidationError) {
+      return json({ error: error.code }, error.status);
     }
 
     if (error instanceof GoogleDriveError) {
