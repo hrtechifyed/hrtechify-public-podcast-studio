@@ -1,5 +1,5 @@
 -- Stage 9: safe final-publish preferences.
--- Stores only curated template identity and caption preference; no FFmpeg commands or free-form render settings.
+-- Stores only curated template identity and caption preference; no free-form render settings.
 
 CREATE TABLE IF NOT EXISTS episode_publish_preferences (
   episode_id TEXT PRIMARY KEY REFERENCES episodes(id) ON DELETE CASCADE,
