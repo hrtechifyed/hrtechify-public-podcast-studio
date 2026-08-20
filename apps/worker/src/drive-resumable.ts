@@ -84,7 +84,11 @@ export const parseResumableUploadStartBody = (
   }
 
   const totalBytes = body.totalBytes;
-  if (!Number.isSafeInteger(totalBytes) || (totalBytes as number) <= MAX_SMALL_DRIVE_UPLOAD_BYTES) {
+  if (
+    typeof totalBytes !== "number" ||
+    !Number.isSafeInteger(totalBytes) ||
+    totalBytes <= MAX_SMALL_DRIVE_UPLOAD_BYTES
+  ) {
     throw new ResumableUploadValidationError("resumable_total_bytes_invalid");
   }
 
@@ -93,7 +97,7 @@ export const parseResumableUploadStartBody = (
     connectionId,
     fileName,
     mimeType,
-    totalBytes: totalBytes as number,
+    totalBytes,
   };
 };
 
@@ -129,13 +133,18 @@ const validateTokenPayload = (value: unknown): ResumableUploadTokenPayload => {
   const start = parseResumableUploadStartBody(payload);
   const issuedAt = payload.issuedAt;
   const expiresAt = payload.expiresAt;
-  if (!Number.isSafeInteger(issuedAt) || !Number.isSafeInteger(expiresAt)) {
+  if (
+    typeof issuedAt !== "number" ||
+    typeof expiresAt !== "number" ||
+    !Number.isSafeInteger(issuedAt) ||
+    !Number.isSafeInteger(expiresAt)
+  ) {
     throw new ResumableUploadValidationError("resumable_upload_token_invalid", 401);
   }
-  if ((expiresAt as number) <= Date.now()) {
+  if (expiresAt <= Date.now()) {
     throw new ResumableUploadValidationError("resumable_upload_token_expired", 410);
   }
-  if ((issuedAt as number) > Date.now() + 5 * 60 * 1000 || (expiresAt as number) <= (issuedAt as number)) {
+  if (issuedAt > Date.now() + 5 * 60 * 1000 || expiresAt <= issuedAt) {
     throw new ResumableUploadValidationError("resumable_upload_token_invalid", 401);
   }
 
@@ -143,8 +152,8 @@ const validateTokenPayload = (value: unknown): ResumableUploadTokenPayload => {
     version: 1,
     ...start,
     sessionUrl: validateSessionUrl(payload.sessionUrl),
-    issuedAt: issuedAt as number,
-    expiresAt: expiresAt as number,
+    issuedAt,
+    expiresAt,
   };
 };
 
