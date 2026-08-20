@@ -53,7 +53,12 @@ const requireSessionKey = (env: WorkerEnv) => {
 };
 
 const googleConfigured = (env: WorkerEnv) =>
-  Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.SESSION_SIGNING_KEY && env.DB);
+  Boolean(
+    env.GOOGLE_AUTH_CLIENT_ID &&
+      env.GOOGLE_AUTH_CLIENT_SECRET &&
+      env.SESSION_SIGNING_KEY &&
+      env.DB,
+  );
 
 const emailConfigured = (env: WorkerEnv) =>
   Boolean(env.SESSION_SIGNING_KEY && env.DB && isEmailDeliveryConfigured(env));
@@ -88,7 +93,7 @@ const startGoogle = async (request: Request, env: WorkerEnv) => {
 
   const redirectUri = `${requestUrl.origin}/api/auth/google/callback`;
   const authorizationUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  authorizationUrl.searchParams.set("client_id", env.GOOGLE_CLIENT_ID!);
+  authorizationUrl.searchParams.set("client_id", env.GOOGLE_AUTH_CLIENT_ID!);
   authorizationUrl.searchParams.set("redirect_uri", redirectUri);
   authorizationUrl.searchParams.set("response_type", "code");
   authorizationUrl.searchParams.set("scope", "openid email profile");
@@ -125,8 +130,8 @@ const finishGoogle = async (request: Request, env: WorkerEnv) => {
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code,
-      client_id: env.GOOGLE_CLIENT_ID!,
-      client_secret: env.GOOGLE_CLIENT_SECRET!,
+      client_id: env.GOOGLE_AUTH_CLIENT_ID!,
+      client_secret: env.GOOGLE_AUTH_CLIENT_SECRET!,
       redirect_uri: redirectUri,
       grant_type: "authorization_code",
       code_verifier: transaction.code_verifier,
