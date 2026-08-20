@@ -2,6 +2,12 @@ import { MAX_ACTIVE_SHOWS_PER_USER } from "@hrtechify/shared";
 import { AuthenticationError, requireVerifiedIdentity } from "./auth";
 import { requireDatabase, type WorkerEnv } from "./db";
 import {
+  dismissBrandSetupPrompt,
+  ensureShowPreferences,
+  ensureUserOnboarding,
+  updateDefaultEpisodeName,
+} from "./onboarding";
+import {
   archiveShowForUser,
   countActiveShowsForUser,
   createShowForUser,
@@ -50,7 +56,7 @@ export const handleProtectedApi = async (
   url: URL,
   env: WorkerEnv,
 ): Promise<Response | null> => {
-  if (url.pathname !== "/api/account" && !url.pathname.startsWith("/api/shows")) {
+  if (!url.pathname.startsWith("/api/account") && !url.pathname.startsWith("/api/shows")) {
     return null;
   }
 
@@ -64,6 +70,7 @@ export const handleProtectedApi = async (
     }
 
     if (url.pathname === "/api/account" && request.method === "GET") {
+      const onboarding = await ensureUserOnboarding(db, identity.userId);
       return json({
         user: {
           id: user.id,
@@ -71,10 +78,18 @@ export const handleProtectedApi = async (
           displayName: user.display_name,
           status: user.status,
         },
+        onboarding,
       });
     }
 
+    if (url.pathname === "/api/account/onboarding/dismiss-brand-prompt" && request.method === "POST") {
+      await ensureUserOnboarding(db, identity.userId);
+      const onboarding = await dismissBrandSetupPrompt(db, identity.userId);
+      return json({ ok: true, onboarding });
+    }
+
     if (url.pathname === "/api/shows" && request.method === "GET") {
+      await ensureUserOnboarding(db, identity.userId);
       const [shows, activeCount] = await Promise.all([
         listShowsForUser(db, identity.userId),
         countActiveShowsForUser(db, identity.userId),
@@ -97,7 +112,36 @@ export const handleProtectedApi = async (
         hostDisplayName: String(body.hostDisplayName ?? ""),
         description: typeof body.description === "string" ? body.description : undefined,
       });
+      await ensureShowPreferences(db, show);
       return json({ show: serializeShow(show) }, 201);
+    }
+
+    const preferencesMatch = url.pathname.match(/^\/api\/shows\/([^/]+)\/preferences$/);
+    if (preferencesMatch) {
+      const showId = decodeURIComponent(preferencesMatch[1]);
+      const show = await getShowForUser(db, identity.userId, showId);
+      if (!show) return json({ error: "show_not_found" }, 404);
+
+      if (request.method === "GET") {
+        const preferences = await ensureShowPreferences(db, show);
+        return json({
+          preferences: {
+            defaultEpisodeName: preferences?.default_episode_name ?? "HRPodcast",
+          },
+        });
+      }
+
+      if (request.method === "PUT" || request.method === "PATCH") {
+        const body = await parseBody(request);
+        const defaultEpisodeName = await updateDefaultEpisodeName(
+          db,
+          show,
+          body.defaultEpisodeName,
+        );
+        return json({ preferences: { defaultEpisodeName } });
+      }
+
+      return json({ error: "method_not_allowed" }, 405);
     }
 
     const match = url.pathname.match(/^\/api\/shows\/([^/]+)(?:\/(archive|restore))?$/);
@@ -119,6 +163,7 @@ export const handleProtectedApi = async (
           description: typeof body.description === "string" ? body.description : undefined,
         });
         if (!show) return json({ error: "show_not_found" }, 404);
+        await ensureShowPreferences(db, show);
         return json({ show: serializeShow(show) });
       }
 
@@ -137,6 +182,7 @@ export const handleProtectedApi = async (
       if (action === "restore" && request.method === "POST") {
         const show = await restoreShowForUser(db, identity.userId, showId);
         if (!show) return json({ error: "show_not_found" }, 404);
+        await ensureShowPreferences(db, show);
         return json({ show: serializeShow(show) });
       }
     }

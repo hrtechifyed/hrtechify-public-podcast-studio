@@ -2,6 +2,11 @@ export const MAX_ACTIVE_SHOWS_PER_USER = 5 as const;
 export const PLATFORM_CREDIT = "Powered by HRTechify" as const;
 export const PLATFORM_CREDIT_POSITION = "bottom-right" as const;
 
+export const HRTECHIFY_STARTER_SHOW_NAME = "The HRTechify Show" as const;
+export const HRTECHIFY_STARTER_HOST_NAME = "HRTechify" as const;
+export const HRTECHIFY_STARTER_EPISODE_NAME = "HRPodcast" as const;
+export const HRTECHIFY_LOGO_URL = "https://hrtechify.com/assets/hrtechify-logo.png" as const;
+
 export type StorageProviderName = "google-drive" | "dropbox";
 
 export interface UserSummary {

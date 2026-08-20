@@ -13,6 +13,7 @@ import {
   listShowsForUser,
   setShowStorageConnectionForUser,
 } from "./shows";
+import { ensureStarterBrandAssets } from "./starter-branding";
 import {
   consumeStorageOAuthState,
   getStorageConnectionForUser,
@@ -267,6 +268,7 @@ const provisionShowWorkspace = async (
   const session = await createGoogleDriveSession(env, userId, connection);
   const workspace = await session.ensureShowWorkspace(show.id, show.name);
   await setShowStorageConnectionForUser(db, userId, show.id, connection.id);
+  const starterBranding = await ensureStarterBrandAssets(env, userId, connection, show);
   await markStorageConnectionUsed(db, userId, connection.id);
 
   return {
@@ -274,6 +276,7 @@ const provisionShowWorkspace = async (
     connectionId: connection.id,
     provider: "google-drive" as const,
     accountEmail: connection.provider_account_email,
+    starterBranding,
     ...workspace,
   };
 };
@@ -317,11 +320,13 @@ const provisionActiveShowWorkspaces = async (
 
     const workspace = await session.ensureShowWorkspace(show.id, show.name);
     await setShowStorageConnectionForUser(db, userId, show.id, connection.id);
+    const starterBranding = await ensureStarterBrandAssets(env, userId, connection, show);
     provisioned.push({
       showId: show.id,
       connectionId: connection.id,
       provider: "google-drive",
       accountEmail: connection.provider_account_email,
+      starterBranding,
       ...workspace,
     });
   }

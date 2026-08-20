@@ -1,8 +1,10 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  HRTECHIFY_LOGO_URL,
   MAX_ACTIVE_SHOWS_PER_USER,
   PLATFORM_CREDIT,
 } from "@hrtechify/shared";
+import { EditableShowDefaults } from "./EditableShowDefaults";
 import { ShowBrandingPanel } from "./ShowBrandingPanel";
 
 interface Account {
@@ -10,6 +12,11 @@ interface Account {
   email: string;
   displayName: string | null;
   status: "active" | "suspended" | "deleted";
+}
+
+interface OnboardingState {
+  starterShowId: string | null;
+  brandSetupRequired: boolean;
 }
 
 interface Show {
@@ -27,13 +34,6 @@ interface ShowLimits {
   active: number;
   maximum: number;
   canCreate: boolean;
-}
-
-interface AuthConfig {
-  providers: {
-    google: boolean;
-    email: boolean;
-  };
 }
 
 interface StorageConfig {
@@ -89,6 +89,11 @@ const friendlyStorageError = (code?: string) => {
       return "Google Drive is temporarily rate-limiting requests. Try again in a little while.";
     case "google_drive_connection_not_found":
       return "No active Google Drive connection was found. Connect Google Drive first.";
+    case "starter_branding_source_unavailable":
+      return "The HRTechify starter logo could not be reached while preparing Brand Settings. Your Drive folders are safe; retry Check & Fix after the logo source is available.";
+    case "starter_branding_source_invalid":
+    case "starter_branding_source_too_large":
+      return "The HRTechify starter logo source failed validation. No existing brand file was overwritten.";
     default:
       return code || "Could not prepare the Google Drive folders.";
   }
@@ -96,7 +101,7 @@ const friendlyStorageError = (code?: string) => {
 
 export function App() {
   const [account, setAccount] = useState<Account | null>(null);
-  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
+  const [onboarding, setOnboarding] = useState<OnboardingState | null>(null);
   const [storageConfig, setStorageConfig] = useState<StorageConfig | null>(null);
   const [storageConnections, setStorageConnections] = useState<StorageConnection[]>([]);
   const [shows, setShows] = useState<Show[]>([]);
@@ -107,12 +112,9 @@ export function App() {
   });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [storageBusyShowIds, setStorageBusyShowIds] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [storageBusyShowIds, setStorageBusyShowIds] = useState<Set<string>>(() => new Set());
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
   const [showForm, setShowForm] = useState<ShowFormState>(emptyShowForm);
   const [editingShowId, setEditingShowId] = useState<string | null>(null);
   const [showFormOpen, setShowFormOpen] = useState(false);
@@ -126,11 +128,14 @@ export function App() {
     [shows],
   );
   const activeGoogleDriveConnections = useMemo(
-    () =>
-      storageConnections.filter(
-        (connection) => connection.provider === "google-drive" && connection.status === "active",
-      ),
+    () => storageConnections.filter(
+      (connection) => connection.provider === "google-drive" && connection.status === "active",
+    ),
     [storageConnections],
+  );
+  const starterShow = useMemo(
+    () => shows.find((show) => show.id === onboarding?.starterShowId) ?? null,
+    [shows, onboarding?.starterShowId],
   );
 
   const loadShows = async () => {
@@ -184,7 +189,7 @@ export function App() {
     if (!payload?.workspace || payload.workspace.showId !== showId) {
       throw new Error("Google Drive did not confirm the requested show workspace.");
     }
-    if (!quiet) setNotice("Google Drive folders are ready for this show.");
+    if (!quiet) setNotice("Google Drive folders and Brand Settings are ready for this show.");
     return payload.workspace;
   };
 
@@ -215,40 +220,35 @@ export function App() {
   const bootstrap = async () => {
     setLoading(true);
     setError(null);
-
     try {
-      const [authResponse, accountResponse] = await Promise.all([
-        fetch("/api/auth/config", { credentials: "same-origin" }),
-        fetch("/api/account", { credentials: "same-origin" }),
-      ]);
-
-      if (authResponse.ok) {
-        setAuthConfig(await jsonOrNull<AuthConfig>(authResponse));
+      const accountResponse = await fetch("/api/account", { credentials: "same-origin" });
+      if (accountResponse.status === 401) {
+        window.location.assign("/");
+        return;
+      }
+      if (!accountResponse.ok) {
+        throw new Error(
+          accountResponse.status === 503
+            ? "Authentication or the database is not configured for this deployment yet."
+            : "The Studio could not load your account.",
+        );
       }
 
-      if (accountResponse.ok) {
-        const payload = await jsonOrNull<{ user: Account }>(accountResponse);
-        if (payload?.user) {
-          setAccount(payload.user);
-          const [, connections] = await Promise.all([loadShows(), loadStorage()]);
-          const activeDrive = connections.filter(
-            (connection) => connection.provider === "google-drive" && connection.status === "active",
-          );
+      const accountPayload = await jsonOrNull<{ user: Account; onboarding?: OnboardingState }>(accountResponse);
+      if (!accountPayload?.user) throw new Error("The Studio could not read your account.");
+      setAccount(accountPayload.user);
+      setOnboarding(accountPayload.onboarding ?? null);
 
-          // Idempotently check and fix app-owned folders on each signed-in load when one Drive account is connected.
-          // This creates missing folders and normalizes renamed app-owned folders without duplication.
-          if (activeDrive.length === 1) {
-            await provisionAllActiveShows(activeDrive[0].id, true);
-          }
-        }
-      } else if (accountResponse.status === 401) {
-        setAccount(null);
-      } else if (accountResponse.status === 503) {
-        setAccount(null);
-        setError("Authentication or the database is not configured for this deployment yet.");
+      const [, connections] = await Promise.all([loadShows(), loadStorage()]);
+      const activeDrive = connections.filter(
+        (connection) => connection.provider === "google-drive" && connection.status === "active",
+      );
+
+      if (activeDrive.length === 1) {
+        await provisionAllActiveShows(activeDrive[0].id, true);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The studio could not reach its account service.");
+      setError(caught instanceof Error ? caught.message : "The Studio could not reach its account service.");
     } finally {
       setLoading(false);
     }
@@ -265,7 +265,7 @@ export function App() {
       setError(`Sign-in could not be completed${reason ? `: ${reason}` : "."}`);
     }
     if (storageStatus === "connected") {
-      setNotice("Google Drive is connected. Your show folders will be prepared automatically.");
+      setNotice("Google Drive is connected. Your show folders and starter Brand Settings will be prepared automatically.");
     }
     if (storageStatus === "error") {
       setError(`Google Drive could not be connected${reason ? `: ${reason}` : "."}`);
@@ -277,49 +277,42 @@ export function App() {
     void bootstrap();
   }, []);
 
-  const signInWithGoogle = () => {
-    window.location.assign("/api/auth/google/start?returnTo=/");
-  };
-
   const connectGoogleDrive = () => {
     window.location.assign("/api/storage/google-drive/start?returnTo=/");
   };
 
-  const requestMagicLink = async (event: FormEvent) => {
-    event.preventDefault();
+  const signOut = async () => {
+    setBusy(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+    } finally {
+      window.location.assign("/");
+    }
+  };
+
+  const dismissBrandPrompt = async () => {
     setBusy(true);
     setError(null);
-    setNotice(null);
-
     try {
-      const response = await fetch("/api/auth/email/start", {
+      const response = await fetch("/api/account/onboarding/dismiss-brand-prompt", {
         method: "POST",
         credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, returnTo: "/" }),
       });
-      const payload = await jsonOrNull<{ message?: string; error?: string }>(response);
-      if (!response.ok) throw new Error(payload?.error ?? "Could not send the sign-in link.");
-      setNotice(payload?.message ?? "Check your email for a secure sign-in link.");
+      const payload = await jsonOrNull<{ onboarding?: OnboardingState; error?: string }>(response);
+      if (!response.ok || !payload?.onboarding) {
+        throw new Error(payload?.error ?? "Could not dismiss the brand reminder.");
+      }
+      setOnboarding(payload.onboarding);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not send the sign-in link.");
+      setError(caught instanceof Error ? caught.message : "Could not dismiss the brand reminder.");
     } finally {
       setBusy(false);
     }
   };
 
-  const signOut = async () => {
-    setBusy(true);
-    await fetch("/api/auth/logout", {
-      method: "POST",
-      credentials: "same-origin",
-    });
-    setAccount(null);
-    setShows([]);
-    setStorageConnections([]);
-    setLimits({ active: 0, maximum: MAX_ACTIVE_SHOWS_PER_USER, canCreate: true });
-    setNotice("You are signed out.");
-    setBusy(false);
+  const openBrandSettings = () => {
+    if (!starterShow) return;
+    document.getElementById(`brand-settings-${starterShow.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   const openCreateShow = () => {
@@ -345,7 +338,6 @@ export function App() {
     event.preventDefault();
     setBusy(true);
     setError(null);
-
     try {
       const wasEditing = Boolean(editingShowId);
       const response = await fetch(editingShowId ? `/api/shows/${editingShowId}` : "/api/shows", {
@@ -502,79 +494,9 @@ export function App() {
 
   if (!account) {
     return (
-      <div className="public-shell">
-        <header className="topbar">
-          <div>
-            <div className="eyebrow">HRTechify</div>
-            <div className="brand">Podcast Studio</div>
-          </div>
-          <a className="github-link" href="https://github.com/hrtechifyed/hrtechify-public-podcast-studio" target="_blank" rel="noreferrer">
-            Open Source on GitHub
-          </a>
-        </header>
-
-        <main className="signin-layout">
-          <section className="signin-intro">
-            <p className="eyebrow">Open-source · privacy-first · user-controlled</p>
-            <h1>Record. Refine. Publish your podcast.</h1>
-            <p>
-              One account can manage up to {MAX_ACTIVE_SHOWS_PER_USER} independent shows. Your show branding, episodes and storage stay separated show by show.
-            </p>
-            <div className="trust-note">
-              <strong>Your voice stays under your control.</strong>
-              <span>Spoken-content changes require your approval before production.</span>
-            </div>
-          </section>
-
-          <section className="signin-card">
-            <p className="eyebrow">Sign in</p>
-            <h2>Enter your studio</h2>
-            <p className="muted">Signing in to the studio is separate from connecting Google Drive or Dropbox.</p>
-
-            {notice && <div className="notice success">{notice}</div>}
-            {error && <div className="notice error">{error}</div>}
-
-            <button
-              type="button"
-              className="google-button"
-              onClick={signInWithGoogle}
-              disabled={!authConfig?.providers.google || busy}
-            >
-              Continue with Google
-            </button>
-            {!authConfig?.providers.google && (
-              <p className="setup-hint">Google sign-in needs deployment credentials before it becomes available.</p>
-            )}
-
-            <div className="divider"><span>or</span></div>
-
-            <form onSubmit={requestMagicLink} className="stack-form">
-              <label>
-                Email address
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="you@example.com"
-                  required
-                  disabled={busy || !authConfig?.providers.email}
-                />
-              </label>
-              <button className="primary-action" type="submit" disabled={busy || !authConfig?.providers.email}>
-                Email me a sign-in link
-              </button>
-            </form>
-            {!authConfig?.providers.email && (
-              <p className="setup-hint">Magic-link email needs its delivery credentials before it becomes available.</p>
-            )}
-
-            <p className="signin-footnote">No password is stored by HRTechify Podcast Studio.</p>
-          </section>
-        </main>
-
-        <footer style={{ justifyContent: "flex-end" }}>
-          <span>{PLATFORM_CREDIT}</span>
-        </footer>
+      <div className="center-screen">
+        <p>Your Studio session is no longer active.</p>
+        <a className="primary-action" href="/">Return to Sign In</a>
       </div>
     );
   }
@@ -591,7 +513,7 @@ export function App() {
             <strong>{account.displayName || account.email}</strong>
             {account.displayName && <span>{account.email}</span>}
           </div>
-          <button type="button" className="secondary-action compact" onClick={signOut} disabled={busy}>Sign out</button>
+          <button type="button" className="secondary-action compact" onClick={() => void signOut()} disabled={busy}>Sign out</button>
         </div>
       </header>
 
@@ -601,7 +523,7 @@ export function App() {
         <button type="button" className="nav-item" disabled>Episodes</button>
         <button type="button" className="nav-item" disabled>Templates</button>
         <a className="nav-link" href="https://github.com/hrtechifyed/hrtechify-public-podcast-studio/blob/main/HOW_IT_WORKS.md" target="_blank" rel="noreferrer">How It Works</a>
-        <a className="nav-link" href="https://github.com/hrtechifyed/hrtechify-public-podcast-studio/blob/main/PRIVACY.md" target="_blank" rel="noreferrer">Privacy & Your Data</a>
+        <a className="nav-link" href="/privacy">Privacy & Your Data</a>
       </nav>
 
       <main className="shows-page">
@@ -622,6 +544,25 @@ export function App() {
 
         {notice && <div className="notice success wide-notice">{notice}</div>}
         {error && <div className="notice error wide-notice">{error}</div>}
+
+        {onboarding?.brandSetupRequired && starterShow && (
+          <section className="show-form-card" aria-label="First-time brand setup reminder">
+            <div className="form-heading">
+              <div>
+                <p className="eyebrow">First-time setup</p>
+                <h2>Make this Studio yours.</h2>
+                <p className="muted">
+                  We started you with HRTechify example branding, including the HRTechify logo for both the show logo and profile photo. Update anything you want in Brand Settings.
+                </p>
+              </div>
+              <img src={HRTECHIFY_LOGO_URL} alt="HRTechify starter logo" style={{ width: 72, height: 72, objectFit: "contain", borderRadius: 12 }} />
+            </div>
+            <div className="inline-actions">
+              <button type="button" className="primary-action compact" onClick={openBrandSettings}>Open Brand Settings</button>
+              <button type="button" className="text-button" onClick={() => void dismissBrandPrompt()} disabled={busy}>Dismiss reminder</button>
+            </div>
+          </section>
+        )}
 
         <section className="show-form-card">
           <div className="form-heading">
@@ -645,7 +586,7 @@ export function App() {
           </div>
 
           {activeGoogleDriveConnections.length === 0 ? (
-            <p className="muted">No Google Drive account is connected yet.</p>
+            <p className="muted">No Google Drive account is connected yet. Google Drive is optional for sign-in and is authorized separately with drive.file when you choose to connect it.</p>
           ) : (
             <div className="archived-list">
               {activeGoogleDriveConnections.map((connection) => (
@@ -722,6 +663,7 @@ export function App() {
               (connection) => connection.id === show.storageConnectionId,
             );
             const showStorageBusy = storageBusyShowIds.has(show.id);
+            const isStarter = onboarding?.starterShowId === show.id;
             return (
               <article className="show-card" key={show.id}>
                 <div className="show-card-topline">
@@ -732,10 +674,22 @@ export function App() {
                       : "Storage not set"}
                   </span>
                 </div>
-                <div className="show-avatar">{show.name.slice(0, 1).toUpperCase()}</div>
+                <div className="show-avatar" style={isStarter ? { overflow: "hidden", padding: 5 } : undefined}>
+                  {isStarter
+                    ? <img src={HRTECHIFY_LOGO_URL} alt="HRTechify" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                    : show.name.slice(0, 1).toUpperCase()}
+                </div>
                 <h3>{show.name}</h3>
                 <p className="host-line">Hosted by {show.hostName}</p>
                 {show.description && <p className="show-description">{show.description}</p>}
+
+                <EditableShowDefaults
+                  showId={show.id}
+                  showName={show.name}
+                  hostName={show.hostName}
+                  description={show.description}
+                  onUpdated={loadShows}
+                />
 
                 {activeGoogleDriveConnections.length > 0 && (
                   <div className="form-actions" style={{ marginTop: 12 }}>
@@ -757,18 +711,39 @@ export function App() {
                   </div>
                 )}
 
-                {assignedConnection?.provider === "google-drive" &&
-                  assignedConnection.status === "active" &&
-                  show.storageConnectionId && (
-                    <ShowBrandingPanel
-                      showId={show.id}
-                      showName={show.name}
-                      connectionId={show.storageConnectionId}
-                    />
-                  )}
+                <div id={`brand-settings-${show.id}`} style={{ marginTop: 14, scrollMarginTop: 24 }}>
+                  <p className="eyebrow">Brand Settings</p>
+                  {assignedConnection?.provider === "google-drive" &&
+                    assignedConnection.status === "active" &&
+                    show.storageConnectionId ? (
+                      <ShowBrandingPanel
+                        showId={show.id}
+                        showName={show.name}
+                        connectionId={show.storageConnectionId}
+                      />
+                    ) : isStarter ? (
+                      <section style={{ padding: 14, border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14 }}>
+                        <p className="muted" style={{ marginTop: 0 }}>Starter previews are ready now. Connect Drive to create immutable user-owned copies and replace them with your own brand.</p>
+                        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                          {["Show logo", "Profile photo"].map((label) => (
+                            <div key={label} style={{ flex: "1 1 180px", minWidth: 0 }}>
+                              <strong>{label}</strong>
+                              <div style={{ marginTop: 8, width: 110, height: 110, borderRadius: 12, background: "rgba(255,255,255,0.04)", display: "grid", placeItems: "center", padding: 8 }}>
+                                <img src={HRTECHIFY_LOGO_URL} alt={`HRTechify default ${label.toLowerCase()}`} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                              </div>
+                              <p className="setup-hint">Default: HRTechify logo · fully replaceable</p>
+                            </div>
+                          ))}
+                        </div>
+                        <button type="button" className="secondary-action compact" onClick={connectGoogleDrive} disabled={busy}>Connect Drive for Brand Settings</button>
+                      </section>
+                    ) : (
+                      <p className="muted">Assign a Drive account to manage this show's logo, profile photo, intro and outro.</p>
+                    )}
+                </div>
 
                 <div className="show-card-actions">
-                  <button type="button" className="secondary-action compact" onClick={() => openEditShow(show)} disabled={busy || showStorageBusy}>Edit</button>
+                  <button type="button" className="secondary-action compact" onClick={() => openEditShow(show)} disabled={busy || showStorageBusy}>Edit description / details</button>
                   <button type="button" className="text-button" onClick={() => void changeShowStatus(show, "archive")} disabled={busy || showStorageBusy}>Archive</button>
                   <button type="button" className="text-button" onClick={() => void deleteShow(show)} disabled={busy || showStorageBusy}>Delete</button>
                 </div>
