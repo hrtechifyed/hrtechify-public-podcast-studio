@@ -9,7 +9,11 @@ import {
 } from "./background-removal";
 import { requireDatabase, type WorkerEnv } from "./db";
 import { createGoogleDriveSession, GoogleDriveError } from "./google-drive";
-import { uploadBackgroundRemovedCandidate } from "./google-drive-branding";
+import {
+  createBrandSelectionMarker,
+  getLatestBrandSelection,
+  uploadBackgroundRemovedCandidate,
+} from "./google-drive-branding";
 import { getShowForUser } from "./shows";
 import {
   getStorageConnectionForUser,
@@ -19,6 +23,7 @@ import {
 import { upsertUserFromIdentity } from "./users";
 
 const PREVIEW_CREATE_PATH = "/api/branding/background-removal/preview";
+const SELECTION_PATH = "/api/branding/background-removal/selection";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -118,10 +123,14 @@ export const handleBackgroundRemovalApi = async (
 
   const candidatePreviewId = parseCandidatePreviewPath(url.pathname);
   const createPreview = url.pathname === PREVIEW_CREATE_PATH;
+  const selectionRoute = url.pathname === SELECTION_PATH;
   if (createPreview && request.method !== "POST") {
     return json({ error: "method_not_allowed" }, 405);
   }
-  if (!createPreview && (!candidatePreviewId || request.method !== "GET")) {
+  if (selectionRoute && request.method !== "GET" && request.method !== "POST") {
+    return json({ error: "method_not_allowed" }, 405);
+  }
+  if (!createPreview && !selectionRoute && (!candidatePreviewId || request.method !== "GET")) {
     return json({ error: "not_found" }, 404);
   }
 
@@ -134,12 +143,16 @@ export const handleBackgroundRemovalApi = async (
     let showId = queryValue(url, "showId");
     let connectionId = queryValue(url, "connectionId");
     let sourceAssetId: string | null = null;
+    let selectionBody: Record<string, unknown> | null = null;
 
-    if (createPreview) {
+    if (createPreview || (selectionRoute && request.method === "POST")) {
       const body = await parseJson(request);
       showId = typeof body.showId === "string" ? body.showId.trim() : "";
       connectionId = typeof body.connectionId === "string" ? body.connectionId.trim() : "";
       sourceAssetId = requiredId(body.sourceAssetId, "source_asset_id_required");
+      if (selectionRoute) selectionBody = body;
+    } else if (selectionRoute && request.method === "GET") {
+      sourceAssetId = requiredId(queryValue(url, "sourceAssetId"), "source_asset_id_required");
     }
 
     if (!showId) return json({ error: "show_id_required" }, 400);
@@ -152,6 +165,75 @@ export const handleBackgroundRemovalApi = async (
       connectionId,
     );
     const drive = await createGoogleDriveSession(env, identity.userId, connection);
+
+    if (selectionRoute && sourceAssetId) {
+      const source = await drive.getOwnedFile(show.id, show.name, sourceAssetId);
+      const sourceKind = sourceBrandAssetKind({
+        id: source.id,
+        name: source.name,
+        mimeType: source.mimeType,
+        appProperties: source.appProperties,
+      });
+
+      if (request.method === "GET") {
+        const selection = await getLatestBrandSelection(env, identity.userId, connection, {
+          showId: show.id,
+          showName: show.name,
+          sourceAssetId: source.id,
+          sourceAssetKind: sourceKind,
+        });
+        await markStorageConnectionUsed(db, identity.userId, connection.id);
+        return json({
+          showId: show.id,
+          connectionId: connection.id,
+          sourceAssetId: source.id,
+          selection,
+        });
+      }
+
+      const choice = selectionBody?.choice;
+      if (choice !== "original" && choice !== "background-removed") {
+        throw new BackgroundRemovalValidationError("background_selection_choice_invalid");
+      }
+
+      let selectedAssetId = source.id;
+      if (choice === "background-removed") {
+        const candidateAssetId = requiredId(
+          selectionBody?.candidateAssetId,
+          "candidate_asset_id_required",
+        );
+        const candidate = await drive.getOwnedFile(show.id, show.name, candidateAssetId);
+        assertBackgroundRemovedCandidate({
+          id: candidate.id,
+          name: candidate.name,
+          mimeType: candidate.mimeType,
+          appProperties: candidate.appProperties,
+        });
+        if (
+          candidate.appProperties.sourceAssetId !== source.id ||
+          candidate.appProperties.sourceAssetKind !== sourceKind
+        ) {
+          throw new BackgroundRemovalValidationError("background_candidate_source_mismatch", 409);
+        }
+        selectedAssetId = candidate.id;
+      }
+
+      const selection = await createBrandSelectionMarker(env, identity.userId, connection, {
+        showId: show.id,
+        showName: show.name,
+        sourceAssetId: source.id,
+        sourceAssetKind: sourceKind,
+        selectedAssetId,
+        choice,
+      });
+      await markStorageConnectionUsed(db, identity.userId, connection.id);
+      return json({
+        showId: show.id,
+        connectionId: connection.id,
+        sourceAssetId: source.id,
+        selection,
+      }, 201);
+    }
 
     if (createPreview && sourceAssetId) {
       const source = await drive.getOwnedFile(show.id, show.name, sourceAssetId);

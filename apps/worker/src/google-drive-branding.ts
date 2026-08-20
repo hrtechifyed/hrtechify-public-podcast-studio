@@ -43,6 +43,15 @@ export interface BrandAssetRecord {
   canDownload: boolean;
 }
 
+export interface BrandSelectionRecord {
+  id: string;
+  selectionKind: "show-logo-selection" | "profile-photo-selection";
+  choice: "original" | "background-removed";
+  sourceAssetId: string;
+  selectedAssetId: string;
+  createdTime: string | null;
+}
+
 const refreshAccessToken = async (
   env: WorkerEnv,
   userId: string,
@@ -153,7 +162,7 @@ const uploadBrandAsset = async (
     body,
   });
   if (!response.ok) throw responseError(response);
-  return serialize((await response.json()) as DriveBrandFile);
+  return { raw: (await response.json()) as DriveBrandFile };
 };
 
 export const uploadOriginalBrandAsset = async (
@@ -168,17 +177,20 @@ export const uploadOriginalBrandAsset = async (
     mimeType: string;
     bytes: Uint8Array;
   },
-) => uploadBrandAsset(env, userId, connection, {
-  showId: input.showId,
-  showName: input.showName,
-  fileName: input.fileName,
-  mimeType: input.mimeType,
-  bytes: input.bytes,
-  appProperties: {
-    assetKind: input.assetKind,
-    original: "true",
-  },
-});
+) => {
+  const created = await uploadBrandAsset(env, userId, connection, {
+    showId: input.showId,
+    showName: input.showName,
+    fileName: input.fileName,
+    mimeType: input.mimeType,
+    bytes: input.bytes,
+    appProperties: {
+      assetKind: input.assetKind,
+      original: "true",
+    },
+  });
+  return serialize(created.raw);
+};
 
 export const uploadBackgroundRemovedCandidate = async (
   env: WorkerEnv,
@@ -197,7 +209,7 @@ export const uploadBackgroundRemovedCandidate = async (
     ? "show-logo-background-removed-candidate"
     : "profile-photo-background-removed-candidate";
 
-  return uploadBrandAsset(env, userId, connection, {
+  const created = await uploadBrandAsset(env, userId, connection, {
     showId: input.showId,
     showName: input.showName,
     fileName: input.fileName,
@@ -212,6 +224,115 @@ export const uploadBackgroundRemovedCandidate = async (
       transformation: "background-removal-v1",
     },
   });
+  return serialize(created.raw);
+};
+
+const selectionKindFor = (sourceAssetKind: BrandAssetKind) =>
+  sourceAssetKind === "show-logo-original"
+    ? "show-logo-selection" as const
+    : "profile-photo-selection" as const;
+
+export const createBrandSelectionMarker = async (
+  env: WorkerEnv,
+  userId: string,
+  connection: StorageConnectionRow,
+  input: {
+    showId: string;
+    showName: string;
+    sourceAssetId: string;
+    sourceAssetKind: BrandAssetKind;
+    selectedAssetId: string;
+    choice: "original" | "background-removed";
+  },
+): Promise<BrandSelectionRecord> => {
+  const selectionKind = selectionKindFor(input.sourceAssetKind);
+  const marker = {
+    version: 1,
+    selectionKind,
+    choice: input.choice,
+    sourceAssetId: input.sourceAssetId,
+    selectedAssetId: input.selectedAssetId,
+    createdAt: new Date().toISOString(),
+  };
+  const bytes = new TextEncoder().encode(JSON.stringify(marker));
+  const created = await uploadBrandAsset(env, userId, connection, {
+    showId: input.showId,
+    showName: input.showName,
+    fileName: `.hrtechify-${selectionKind}-${crypto.randomUUID()}.json`,
+    mimeType: "application/json",
+    bytes,
+    appProperties: {
+      assetKind: selectionKind,
+      stateMarker: "true",
+      selectionChoice: input.choice,
+      sourceAssetId: input.sourceAssetId,
+      selectedAssetId: input.selectedAssetId,
+      sourceAssetKind: input.sourceAssetKind,
+    },
+  });
+  return {
+    id: created.raw.id,
+    selectionKind,
+    choice: input.choice,
+    sourceAssetId: input.sourceAssetId,
+    selectedAssetId: input.selectedAssetId,
+    createdTime: created.raw.createdTime ?? null,
+  };
+};
+
+export const getLatestBrandSelection = async (
+  env: WorkerEnv,
+  userId: string,
+  connection: StorageConnectionRow,
+  input: {
+    showId: string;
+    showName: string;
+    sourceAssetId: string;
+    sourceAssetKind: BrandAssetKind;
+  },
+): Promise<BrandSelectionRecord | null> => {
+  const drive = await createGoogleDriveSession(env, userId, connection);
+  const workspace = await drive.ensureShowWorkspace(input.showId, input.showName);
+  const accessToken = await refreshAccessToken(env, userId, connection);
+  const selectionKind = selectionKindFor(input.sourceAssetKind);
+  const query = [
+    `'${qEscape(workspace.folders.brandAssets)}' in parents`,
+    "trashed=false",
+    "appProperties has { key='hrtechifyStudio' and value='v1' }",
+    "appProperties has { key='role' and value='asset' }",
+    `appProperties has { key='showId' and value='${qEscape(input.showId)}' }`,
+    "appProperties has { key='folder' and value='brand-assets' }",
+    `appProperties has { key='assetKind' and value='${selectionKind}' }`,
+    `appProperties has { key='sourceAssetId' and value='${qEscape(input.sourceAssetId)}' }`,
+    "appProperties has { key='stateMarker' and value='true' }",
+  ].join(" and ");
+
+  const url = new URL(`${DRIVE_API}/files`);
+  url.searchParams.set("q", query);
+  url.searchParams.set("spaces", "drive");
+  url.searchParams.set("orderBy", "createdTime desc");
+  url.searchParams.set("pageSize", "1");
+  url.searchParams.set("fields", `files(${BRAND_FIELDS})`);
+  const response = await fetch(url.toString(), {
+    headers: { authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) throw responseError(response);
+  const payload = (await response.json()) as DriveBrandFileList;
+  const file = payload.files?.[0];
+  if (!file) return null;
+  const choice = file.appProperties?.selectionChoice;
+  const selectedAssetId = file.appProperties?.selectedAssetId;
+  if ((choice !== "original" && choice !== "background-removed") || !selectedAssetId) {
+    return null;
+  }
+  return {
+    id: file.id,
+    selectionKind,
+    choice,
+    sourceAssetId: input.sourceAssetId,
+    selectedAssetId,
+    createdTime: file.createdTime ?? null,
+  };
 };
 
 export const listShowBrandAssets = async (
