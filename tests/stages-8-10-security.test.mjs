@@ -101,8 +101,8 @@ test("intro and outro are immutable optional inputs and are never overwritten", 
   assert.match(workflow, /show-outro-original/);
   assert.match(workflow, /appProperties\.original !== "true"/);
   assert.match(workflow, /appProperties\.immutable !== "true"/);
-  assert.match(container, /loadBrandMedia\("intro"/);
-  assert.match(container, /loadBrandMedia\("outro"/);
+  assert.match(workflow, /loadBrandMedia\("intro"/);
+  assert.match(workflow, /loadBrandMedia\("outro"/);
 });
 
 test("job completes only after final WebVTT MP3 and MP4 are verified", () => {
@@ -140,5 +140,5 @@ test("privacy page discloses persistent Drive caption timing, safe templates and
   assert.match(privacy, /downloadable WebVTT caption file/);
   assert.match(privacy, /separate final MP3, final MP4 and final WebVTT/);
   assert.match(privacy, /public internet access disabled/);
-  assert.match(privacy, /Powered by HRTechify/);
+  assert.match(privacy, /PLATFORM_CREDIT/);
 });
