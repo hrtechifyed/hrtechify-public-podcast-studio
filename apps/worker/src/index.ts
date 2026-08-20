@@ -7,6 +7,7 @@ import type { WorkerEnv } from "./db";
 import { handleAuthApi } from "./auth-api";
 import { handleBackgroundRemovalApi } from "./background-removal-api";
 import { handleBrandAssetsApi } from "./brand-assets-api";
+import { handleBrandMediaApi } from "./brand-media-api";
 import { handleDriveFileApi } from "./drive-file-api";
 import { handleProtectedApi } from "./protected-api";
 import { handleStorageApi } from "./storage-api";
@@ -41,6 +42,9 @@ export default {
 
     const authResponse = await handleAuthApi(request, url, env);
     if (authResponse) return authResponse;
+
+    const brandMediaResponse = await handleBrandMediaApi(request, url, env);
+    if (brandMediaResponse) return brandMediaResponse;
 
     const backgroundRemovalResponse = await handleBackgroundRemovalApi(request, url, env);
     if (backgroundRemovalResponse) return backgroundRemovalResponse;
