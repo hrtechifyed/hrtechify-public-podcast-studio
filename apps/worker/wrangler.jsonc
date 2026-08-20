@@ -3,6 +3,7 @@
   "name": "hrtechify-public-podcast-studio",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-20",
+  "keep_vars": true,
   "observability": {
     "enabled": true
   },
