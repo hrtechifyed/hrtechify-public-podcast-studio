@@ -1,6 +1,10 @@
+export interface D1RunMeta {
+  changes?: number;
+}
+
 export interface D1RunResult {
   success?: boolean;
-  meta?: unknown;
+  meta?: D1RunMeta;
 }
 
 export interface D1AllResult<T> {
@@ -21,6 +25,11 @@ export interface D1DatabaseLike {
 export interface WorkerEnv {
   DB?: D1DatabaseLike;
   SESSION_SIGNING_KEY?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  RESEND_API_KEY?: string;
+  AUTH_EMAIL_FROM?: string;
+  APP_URL?: string;
 }
 
 export const requireDatabase = (env: WorkerEnv): D1DatabaseLike => {
