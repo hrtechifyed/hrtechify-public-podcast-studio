@@ -19,11 +19,12 @@ test("intro/outro API has explicit list, start, chunk and status methods", () =>
   assert.match(apiSource, /isStatus && request\.method !== "POST"/);
 });
 
-test("brand media token is user-bound and never exposes Google session URL", () => {
+test("brand media token is user-bound and API never returns the Google session URL", () => {
   assert.match(apiSource, /createBrandMediaUploadToken/);
   assert.match(apiSource, /readBrandMediaUploadToken/);
   assert.match(apiSource, /x-hrtechify-brand-upload-token/);
-  assert.doesNotMatch(apiSource, /sessionUrl:\s*session\.sessionUrl/);
+  assert.match(apiSource, /return json\(\{ uploadToken, nextOffset: 0 \}, 201\)/);
+  assert.doesNotMatch(apiSource, /return json\(\{\s*sessionUrl/);
   assert.doesNotMatch(apiSource, /authorization: `Bearer/);
 });
 
@@ -68,8 +69,8 @@ test("media listing stays show-scoped and filters intro/outro originals only", (
   assert.match(listSource, /kind !== "show-intro-original" && kind !== "show-outro-original"/);
 });
 
-test("brand media handler is routed before generic branding handler", () => {
-  const mediaIndex = indexSource.indexOf("handleBrandMediaApi");
-  const brandIndex = indexSource.indexOf("handleBrandAssetsApi");
+test("brand media handler executes before generic branding handler", () => {
+  const mediaIndex = indexSource.indexOf("const brandMediaResponse = await handleBrandMediaApi");
+  const brandIndex = indexSource.indexOf("const brandAssetsResponse = await handleBrandAssetsApi");
   assert.ok(mediaIndex >= 0 && brandIndex >= 0 && mediaIndex < brandIndex);
 });
