@@ -7,6 +7,16 @@
   "observability": {
     "enabled": true
   },
+  "vars": {
+    "APP_URL": "https://hrtechify-public-podcast-studio.hrtechifyed.workers.dev"
+  },
+  "secrets": {
+    "required": [
+      "SESSION_SIGNING_KEY",
+      "GOOGLE_AUTH_CLIENT_ID",
+      "GOOGLE_AUTH_CLIENT_SECRET"
+    ]
+  },
   "d1_databases": [
     {
       "binding": "DB",
