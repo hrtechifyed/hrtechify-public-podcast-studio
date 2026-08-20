@@ -23,7 +23,7 @@ test("render jobs are append-only snapshots with only one active job per episode
   assert.match(migration, /WHERE status IN \('queued', 'processing'\)/);
   assert.match(jobs, /technical_plan_json/);
   assert.match(jobs, /approved_edits_json/);
-  assert.match(jobs, /source_immutable: true/);
+  assert.match(jobs, /sourceImmutable: true/);
 });
 
 test("render plan comes from stored approval decisions and fixed technical policy", () => {
