@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { EditorialApprovalPanel } from "./EditorialApprovalPanel";
 
 interface EpisodeRecord {
   id: string;
@@ -115,6 +116,14 @@ export function EpisodeList({ showId, showName }: EpisodeListProps) {
     }
   };
 
+  const updateEpisodeStatus = (episodeId: string, status: string) => {
+    setEpisodes((current) => current.map((episode) =>
+      episode.id === episodeId
+        ? { ...episode, status: status as EpisodeRecord["status"] }
+        : episode,
+    ));
+  };
+
   return (
     <section
       aria-label={`${showName} episodes`}
@@ -144,34 +153,45 @@ export function EpisodeList({ showId, showName }: EpisodeListProps) {
         <div className="archived-list" style={{ marginTop: 12 }}>
           {episodes.map((episode) => (
             <article key={episode.id}>
-              <div style={{ minWidth: 0 }}>
-                {editingId === episode.id ? (
-                  <form onSubmit={(event) => void saveTitle(event, episode.id)} className="inline-actions">
-                    <input
-                      value={draftTitle}
-                      onChange={(event) => setDraftTitle(event.target.value)}
-                      maxLength={160}
-                      required
-                      aria-label="Episode title"
-                    />
-                    <button type="submit" className="primary-action compact" disabled={busyId === episode.id}>Save</button>
-                    <button type="button" className="text-button" onClick={() => setEditingId(null)} disabled={busyId === episode.id}>Cancel</button>
-                  </form>
-                ) : (
-                  <>
-                    <strong>{episode.title}</strong>
-                    <span>
-                      {statusLabel(episode.status)} · {formatBytes(episode.source.sizeBytes)} · immutable {episode.source.provider === "google-drive" ? "Google Drive" : "Dropbox"} original
-                    </span>
-                    <span>{episode.source.fileName}</span>
-                  </>
-                )}
+              <div style={{ width: "100%" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ minWidth: 0 }}>
+                    {editingId === episode.id ? (
+                      <form onSubmit={(event) => void saveTitle(event, episode.id)} className="inline-actions">
+                        <input
+                          value={draftTitle}
+                          onChange={(event) => setDraftTitle(event.target.value)}
+                          maxLength={160}
+                          required
+                          aria-label="Episode title"
+                        />
+                        <button type="submit" className="primary-action compact" disabled={busyId === episode.id}>Save</button>
+                        <button type="button" className="text-button" onClick={() => setEditingId(null)} disabled={busyId === episode.id}>Cancel</button>
+                      </form>
+                    ) : (
+                      <>
+                        <strong>{episode.title}</strong>
+                        <span>
+                          {statusLabel(episode.status)} · {formatBytes(episode.source.sizeBytes)} · immutable {episode.source.provider === "google-drive" ? "Google Drive" : "Dropbox"} original
+                        </span>
+                        <span>{episode.source.fileName}</span>
+                      </>
+                    )}
+                  </div>
+                  {editingId !== episode.id && (
+                    <button type="button" className="secondary-action compact" onClick={() => startEdit(episode)}>
+                      ✎ Edit title
+                    </button>
+                  )}
+                </div>
+
+                <EditorialApprovalPanel
+                  episodeId={episode.id}
+                  episodeTitle={episode.title}
+                  episodeStatus={episode.status}
+                  onStatusChange={(status) => updateEpisodeStatus(episode.id, status)}
+                />
               </div>
-              {editingId !== episode.id && (
-                <button type="button" className="secondary-action compact" onClick={() => startEdit(episode)}>
-                  ✎ Edit title
-                </button>
-              )}
             </article>
           ))}
         </div>
