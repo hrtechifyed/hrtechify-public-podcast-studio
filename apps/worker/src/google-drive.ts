@@ -1,8 +1,10 @@
 import type { WorkerEnv } from "./db";
+import { buildDriveMultipartUpload, type SmallDriveUploadFolder } from "./drive-upload";
 import type { StorageConnectionRow } from "./storage-store";
 import { decryptStorageToken } from "./token-crypto";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
+const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const STUDIO_ROOT_NAME = "HRTechify Podcast Studio";
 
@@ -15,6 +17,8 @@ interface GoogleTokenResponse {
 interface DriveFile {
   id: string;
   name: string;
+  mimeType?: string;
+  size?: string;
   webViewLink?: string;
   parents?: string[];
   appProperties?: Record<string, string>;
@@ -48,6 +52,16 @@ export interface GoogleDriveWorkspace {
   };
 }
 
+export interface GoogleDriveStoredFile {
+  id: string;
+  name: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  webViewLink: string | null;
+  parents: string[];
+  appProperties: Record<string, string>;
+}
+
 export class GoogleDriveError extends Error {
   constructor(
     public readonly code: string,
@@ -60,7 +74,7 @@ export class GoogleDriveError extends Error {
 
 const qEscape = (value: string) => value.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
 
-const driveFields = "id,name,webViewLink,parents,appProperties";
+const driveFields = "id,name,mimeType,size,webViewLink,parents,appProperties";
 
 const refreshGoogleDriveAccessToken = async (
   env: WorkerEnv,
@@ -300,6 +314,66 @@ const ensureShowSubfolder = async (
   });
 };
 
+const serializeStoredFile = (file: DriveFile): GoogleDriveStoredFile => {
+  const parsedSize = file.size ? Number(file.size) : null;
+  return {
+    id: file.id,
+    name: file.name,
+    mimeType: file.mimeType ?? null,
+    sizeBytes: parsedSize !== null && Number.isFinite(parsedSize) ? parsedSize : null,
+    webViewLink: file.webViewLink ?? null,
+    parents: file.parents ?? [],
+    appProperties: file.appProperties ?? {},
+  };
+};
+
+const uploadSmallFileToFolder = async (
+  accessToken: string,
+  input: {
+    parentId: string;
+    showId: string;
+    folder: SmallDriveUploadFolder;
+    fileName: string;
+    mimeType: string;
+    bytes: Uint8Array;
+  },
+): Promise<GoogleDriveStoredFile> => {
+  const boundary = `hrtechify_${crypto.randomUUID().replaceAll("-", "")}`;
+  const { body, contentType } = buildDriveMultipartUpload({
+    boundary,
+    metadata: {
+      name: input.fileName,
+      parents: [input.parentId],
+      appProperties: {
+        hrtechifyStudio: "v1",
+        role: "asset",
+        showId: input.showId,
+        folder: input.folder,
+      },
+    },
+    mimeType: input.mimeType,
+    bytes: input.bytes,
+  });
+
+  const url = new URL(`${DRIVE_UPLOAD_API}/files`);
+  url.searchParams.set("uploadType", "multipart");
+  url.searchParams.set("fields", driveFields);
+
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": contentType,
+    },
+    body,
+  });
+  if (!response.ok) {
+    throw await driveErrorFromResponse(response);
+  }
+
+  return serializeStoredFile((await response.json()) as DriveFile);
+};
+
 export const createGoogleDriveSession = async (
   env: WorkerEnv,
   userId: string,
@@ -308,32 +382,57 @@ export const createGoogleDriveSession = async (
   const accessToken = await refreshGoogleDriveAccessToken(env, userId, connection);
   let rootFolder: DriveFile | null = null;
 
+  const ensureShowWorkspace = async (
+    showId: string,
+    showName: string,
+  ): Promise<GoogleDriveWorkspace> => {
+    rootFolder ??= await ensureStudioRoot(accessToken);
+    const showFolder = await ensureShowFolder(
+      accessToken,
+      rootFolder.id,
+      showId,
+      showName.trim() || "Untitled Show",
+    );
+
+    const [brandAssets, templates, episodes] = await Promise.all([
+      ensureShowSubfolder(accessToken, showFolder.id, showId, "brand-assets", "Brand Assets"),
+      ensureShowSubfolder(accessToken, showFolder.id, showId, "templates", "Templates"),
+      ensureShowSubfolder(accessToken, showFolder.id, showId, "episodes", "Episodes"),
+    ]);
+
+    return {
+      rootFolderId: rootFolder.id,
+      showFolderId: showFolder.id,
+      showFolderUrl: showFolder.webViewLink ?? null,
+      folders: {
+        brandAssets: brandAssets.id,
+        templates: templates.id,
+        episodes: episodes.id,
+      },
+    };
+  };
+
   return {
-    async ensureShowWorkspace(showId: string, showName: string): Promise<GoogleDriveWorkspace> {
-      rootFolder ??= await ensureStudioRoot(accessToken);
-      const showFolder = await ensureShowFolder(
-        accessToken,
-        rootFolder.id,
+    ensureShowWorkspace,
+    async uploadSmallFile(
+      showId: string,
+      showName: string,
+      input: {
+        folder: SmallDriveUploadFolder;
+        fileName: string;
+        mimeType: string;
+        bytes: Uint8Array;
+      },
+    ) {
+      const workspace = await ensureShowWorkspace(showId, showName);
+      const parentId = input.folder === "brand-assets"
+        ? workspace.folders.brandAssets
+        : workspace.folders.episodes;
+      return uploadSmallFileToFolder(accessToken, {
+        parentId,
         showId,
-        showName.trim() || "Untitled Show",
-      );
-
-      const [brandAssets, templates, episodes] = await Promise.all([
-        ensureShowSubfolder(accessToken, showFolder.id, showId, "brand-assets", "Brand Assets"),
-        ensureShowSubfolder(accessToken, showFolder.id, showId, "templates", "Templates"),
-        ensureShowSubfolder(accessToken, showFolder.id, showId, "episodes", "Episodes"),
-      ]);
-
-      return {
-        rootFolderId: rootFolder.id,
-        showFolderId: showFolder.id,
-        showFolderUrl: showFolder.webViewLink ?? null,
-        folders: {
-          brandAssets: brandAssets.id,
-          templates: templates.id,
-          episodes: episodes.id,
-        },
-      };
+        ...input,
+      });
     },
   };
 };

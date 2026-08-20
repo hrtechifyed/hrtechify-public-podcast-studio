@@ -12,7 +12,7 @@
     "dev:worker": "npm run dev --workspace @hrtechify/worker",
     "build": "npm run build --workspace @hrtechify/web && npm run typecheck --workspace @hrtechify/worker",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test tests/*.test.mjs && node --import tsx --test tests/*.test.ts",
     "db:migrations:list": "npm run db:migrations:list --workspace @hrtechify/worker",
     "db:migrate:local": "npm run db:migrate:local --workspace @hrtechify/worker",
     "db:migrate:remote": "npm run db:migrate:remote --workspace @hrtechify/worker"
@@ -21,6 +21,7 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "tsx": "^4.23.12",
     "typescript": "^5.9.2"
   }
 }

@@ -5,6 +5,7 @@ import {
 } from "@hrtechify/shared";
 import type { WorkerEnv } from "./db";
 import { handleAuthApi } from "./auth-api";
+import { handleDriveFileApi } from "./drive-file-api";
 import { handleProtectedApi } from "./protected-api";
 import { handleStorageApi } from "./storage-api";
 
@@ -38,6 +39,9 @@ export default {
 
     const authResponse = await handleAuthApi(request, url, env);
     if (authResponse) return authResponse;
+
+    const driveFileResponse = await handleDriveFileApi(request, url, env);
+    if (driveFileResponse) return driveFileResponse;
 
     const storageResponse = await handleStorageApi(request, url, env);
     if (storageResponse) return storageResponse;
