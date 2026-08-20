@@ -1,6 +1,7 @@
+import type { ReactNode } from "react";
 import { PLATFORM_CREDIT } from "@hrtechify/shared";
 
-const PrivacySection = ({ title, children }: { title: string; children: React.ReactNode }) => (
+const PrivacySection = ({ title, children }: { title: string; children: ReactNode }) => (
   <section className="show-form-card" style={{ marginTop: 18 }}>
     <div className="form-heading">
       <div>
