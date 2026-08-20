@@ -1,7 +1,7 @@
 import type { D1DatabaseLike } from "./db";
-import type { GoogleDriveStoredFile } from "./google-drive";
 import type { ShowRow } from "./shows";
 import type { StorageConnectionRow } from "./storage-store";
+import type { StudioStoredFile } from "./studio-storage";
 
 export type EpisodeStatus =
   | "draft"
@@ -50,7 +50,7 @@ const titleFromFileName = (fileName: string) => {
   return cleanEpisodeTitle(withoutExtension || "HRPodcast");
 };
 
-const requireVerifiedOriginal = (show: ShowRow, file: GoogleDriveStoredFile) => {
+const requireVerifiedOriginal = (show: ShowRow, file: StudioStoredFile) => {
   if (
     file.appProperties.assetKind !== "original-recording" ||
     file.appProperties.immutable !== "true" ||
@@ -91,7 +91,7 @@ export const ensureEpisodeFromVerifiedOriginal = async (
   userId: string,
   show: ShowRow,
   connection: StorageConnectionRow,
-  file: GoogleDriveStoredFile,
+  file: StudioStoredFile,
 ): Promise<EpisodeRow> => {
   requireVerifiedOriginal(show, file);
   if (show.user_id !== userId || connection.user_id !== userId) {
@@ -99,6 +99,9 @@ export const ensureEpisodeFromVerifiedOriginal = async (
   }
   if (show.storage_connection_id !== connection.id) {
     throw new Error("episode_source_connection_mismatch");
+  }
+  if (file.provider !== connection.provider) {
+    throw new Error("episode_source_provider_mismatch");
   }
 
   const id = crypto.randomUUID();
