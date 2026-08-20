@@ -34,6 +34,12 @@ export const ONBOARDING_TABLES = [
 
 export const EPISODE_TABLES = ["episodes"] as const;
 
+export const EDITORIAL_APPROVAL_TABLES = [
+  "episode_edit_analysis_runs",
+  "episode_edit_proposals",
+  "episode_edit_decisions",
+] as const;
+
 export const isPasswordAuthSchemaReady = (db: D1DatabaseLike) =>
   allTablesExist(db, PASSWORD_AUTH_TABLES);
 
@@ -42,3 +48,6 @@ export const isOnboardingSchemaReady = (db: D1DatabaseLike) =>
 
 export const isEpisodeSchemaReady = (db: D1DatabaseLike) =>
   allTablesExist(db, EPISODE_TABLES);
+
+export const isEditorialApprovalSchemaReady = (db: D1DatabaseLike) =>
+  allTablesExist(db, EDITORIAL_APPROVAL_TABLES);
