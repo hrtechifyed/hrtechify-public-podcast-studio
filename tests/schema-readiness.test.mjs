@@ -11,12 +11,14 @@ const protectedApi = await readFile(new URL("../apps/worker/src/protected-api.ts
 test("schema readiness checks sqlite metadata without reading user data", () => {
   assert.match(schema, /FROM sqlite_master/);
   assert.match(schema, /WHERE type = 'table' AND name = \?/);
-  assert.match(schema, /password_credentials/);
-  assert.match(schema, /password_verifications/);
-  assert.match(schema, /password_resets/);
+  assert.match(schema, /auth_password_credentials/);
+  assert.match(schema, /auth_password_verifications/);
+  assert.match(schema, /auth_password_resets/);
   assert.match(schema, /auth_rate_limits/);
   assert.match(schema, /user_onboarding/);
   assert.match(schema, /show_preferences/);
+  assert.match(schema, /storage_asset_records/);
+  assert.match(schema, /storage_upload_sessions/);
   assert.doesNotMatch(schema, /SELECT \* FROM users/);
 });
 
