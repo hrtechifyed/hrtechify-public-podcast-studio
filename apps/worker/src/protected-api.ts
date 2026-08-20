@@ -5,6 +5,7 @@ import {
   archiveShowForUser,
   countActiveShowsForUser,
   createShowForUser,
+  deleteShowForUser,
   getShowForUser,
   listShowsForUser,
   restoreShowForUser,
@@ -119,6 +120,12 @@ export const handleProtectedApi = async (
         });
         if (!show) return json({ error: "show_not_found" }, 404);
         return json({ show: serializeShow(show) });
+      }
+
+      if (!action && request.method === "DELETE") {
+        const deleted = await deleteShowForUser(db, identity.userId, showId);
+        if (!deleted) return json({ error: "show_not_found" }, 404);
+        return json({ ok: true, filesDeleted: false });
       }
 
       if (action === "archive" && request.method === "POST") {

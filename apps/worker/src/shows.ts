@@ -218,3 +218,23 @@ export const restoreShowForUser = async (
 
   return getShowForUser(db, userId, showId);
 };
+
+export const deleteShowForUser = async (
+  db: D1DatabaseLike,
+  userId: string,
+  showId: string,
+): Promise<boolean> => {
+  const show = await getShowForUser(db, userId, showId);
+  if (!show) return false;
+
+  await db
+    .prepare(
+      `UPDATE shows
+       SET status = 'deleted', storage_connection_id = NULL, updated_at = datetime('now')
+       WHERE id = ? AND user_id = ? AND status <> 'deleted'`,
+    )
+    .bind(showId, userId)
+    .run();
+
+  return true;
+};
