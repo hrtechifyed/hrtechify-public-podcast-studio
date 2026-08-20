@@ -1,7 +1,8 @@
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS episode_edit_analysis_runs (
-  id TEXT PRIMARY KEY,
+  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+  id TEXT NOT NULL UNIQUE,
   user_id TEXT NOT NULL,
   show_id TEXT NOT NULL,
   episode_id TEXT NOT NULL,
@@ -16,8 +17,12 @@ CREATE TABLE IF NOT EXISTS episode_edit_analysis_runs (
   FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_edit_analysis_episode_created
-  ON episode_edit_analysis_runs(user_id, episode_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_edit_analysis_episode_sequence
+  ON episode_edit_analysis_runs(user_id, episode_id, sequence DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_edit_analysis_one_active_per_episode
+  ON episode_edit_analysis_runs(episode_id)
+  WHERE status = 'analyzing';
 
 CREATE TABLE IF NOT EXISTS episode_edit_proposals (
   id TEXT PRIMARY KEY,
