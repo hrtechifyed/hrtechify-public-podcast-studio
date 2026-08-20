@@ -12,6 +12,7 @@
     "dev:worker": "npm run dev --workspace @hrtechify/worker",
     "build": "npm run build --workspace @hrtechify/web && npm run typecheck --workspace @hrtechify/worker",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "node --test tests/*.test.mjs",
     "db:migrations:list": "npm run db:migrations:list --workspace @hrtechify/worker",
     "db:migrate:local": "npm run db:migrate:local --workspace @hrtechify/worker",
     "db:migrate:remote": "npm run db:migrate:remote --workspace @hrtechify/worker"
