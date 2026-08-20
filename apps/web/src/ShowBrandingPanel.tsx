@@ -1,4 +1,5 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ShowBrandMediaPanel } from "./ShowBrandMediaPanel";
 
 type BrandAssetKind = "show-logo-original" | "profile-photo-original";
 type SelectionChoice = "original" | "background-removed";
@@ -140,17 +141,12 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
     void loadAssets();
   }, [showId, connectionId]);
 
-  const uploadAsset = async (
-    assetKind: BrandAssetKind,
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
+  const uploadAsset = async (assetKind: BrandAssetKind, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-
     setError(null);
     setNotice(null);
-
     if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
       setError("Use a PNG, JPEG or WebP image.");
       return;
@@ -167,19 +163,14 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
       url.searchParams.set("connectionId", connectionId);
       url.searchParams.set("assetKind", assetKind);
       url.searchParams.set("fileName", file.name);
-
       const response = await fetch(url.toString(), {
         method: "POST",
         credentials: "same-origin",
-        headers: {
-          "content-type": file.type,
-          "x-upload-size": String(file.size),
-        },
+        headers: { "content-type": file.type, "x-upload-size": String(file.size) },
         body: file,
       });
       const payload = (await response.json().catch(() => null)) as BrandAssetsResponse | null;
       if (!response.ok) throw new Error(friendlyBrandError(payload?.error));
-
       setCandidate(null);
       setNotice(
         assetKind === "show-logo-original"
@@ -254,11 +245,7 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
     }
   };
 
-  const assetControl = (
-    title: string,
-    assetKind: BrandAssetKind,
-    current: BrandAssetRecord | null,
-  ) => {
+  const assetControl = (title: string, assetKind: BrandAssetKind, current: BrandAssetRecord | null) => {
     const selection = current ? selectionBySourceId[current.id] : null;
     const processing = current ? processingSourceId === current.id : false;
     return (
@@ -296,9 +283,7 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
             </button>
           )}
           {current?.webViewLink && (
-            <a className="text-button" href={current.webViewLink} target="_blank" rel="noreferrer">
-              Open original
-            </a>
+            <a className="text-button" href={current.webViewLink} target="_blank" rel="noreferrer">Open original</a>
           )}
         </div>
       </div>
@@ -312,12 +297,7 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
   return (
     <section
       aria-label={`${showName} branding`}
-      style={{
-        marginTop: 14,
-        padding: 14,
-        border: "1px solid rgba(255,255,255,0.12)",
-        borderRadius: 14,
-      }}
+      style={{ marginTop: 14, padding: 14, border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14 }}
     >
       <div style={{ marginBottom: 12 }}>
         <strong>Show branding</strong>
@@ -336,14 +316,7 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
       )}
 
       {candidate && candidateSource && (
-        <div
-          style={{
-            marginTop: 16,
-            padding: 14,
-            border: "1px solid rgba(255,255,255,0.16)",
-            borderRadius: 12,
-          }}
-        >
+        <div style={{ marginTop: 16, padding: 14, border: "1px solid rgba(255,255,255,0.16)", borderRadius: 12 }}>
           <strong>Background-removed preview</strong>
           <p className="muted" style={{ margin: "5px 0 10px" }}>
             Nothing changes until you choose. The original remains stored unchanged.
@@ -373,25 +346,19 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
                 className="primary-action compact"
                 disabled={Boolean(processingSourceId)}
                 onClick={() => void selectBrandVersion(candidateSource, "background-removed", candidate.candidate.id)}
-              >
-                Accept
-              </button>
+              >Accept</button>
               <button
                 type="button"
                 className="secondary-action compact"
                 disabled={Boolean(processingSourceId)}
                 onClick={() => void generateBackgroundPreview(candidateSource)}
-              >
-                Retry
-              </button>
+              >Retry</button>
               <button
                 type="button"
                 className="text-button"
                 disabled={Boolean(processingSourceId)}
                 onClick={() => void selectBrandVersion(candidateSource, "original")}
-              >
-                Keep Original
-              </button>
+              >Keep Original</button>
             </div>
           </div>
         </div>
@@ -418,6 +385,8 @@ export function ShowBrandingPanel({ showId, showName, connectionId }: ShowBrandi
           </div>
         </details>
       )}
+
+      <ShowBrandMediaPanel showId={showId} showName={showName} connectionId={connectionId} />
     </section>
   );
 }
