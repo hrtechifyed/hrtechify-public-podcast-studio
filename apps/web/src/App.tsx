@@ -76,7 +76,7 @@ const jsonOrNull = async <T,>(response: Response): Promise<T | null> => {
 const friendlyStorageError = (code?: string) => {
   switch (code) {
     case "google_drive_api_not_enabled":
-      return "Google Drive is connected, but the Google Drive API is not enabled in the Google Cloud project. Enable the Google Drive API, then click Prepare all active shows again.";
+      return "Google Drive is connected, but the Google Drive API is not enabled in the Google Cloud project. Enable the Google Drive API, then retry the Drive setup for the intended account.";
     case "google_drive_permission_denied":
       return "Google Drive denied the folder operation. Reconnect Google Drive and try again.";
     case "google_drive_scope_insufficient":
@@ -198,6 +198,7 @@ export function App() {
           : "Google Drive folders are already ready.",
       );
     }
+    return payload;
   };
 
   const bootstrap = async () => {
@@ -442,11 +443,25 @@ export function App() {
   };
 
   const setupAllStorage = async (connection: StorageConnection) => {
+    const targetAccount = connection.accountEmail || "this Google Drive account";
+    if (activeGoogleDriveConnections.length > 1) {
+      const confirmed = window.confirm(
+        `Prepare or repair active-show folders in ${targetAccount}?\n\nUnassigned active shows will use this Drive account. Shows already assigned to another Drive account will not be moved.`,
+      );
+      if (!confirmed) return;
+    }
+
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      await provisionAllActiveShows(connection.id);
+      const payload = await provisionAllActiveShows(connection.id, true);
+      const count = payload?.provisioned?.length ?? 0;
+      setNotice(
+        count > 0
+          ? `${count} active show${count === 1 ? "" : "s"} prepared in ${targetAccount}. Shows assigned to other Drive accounts were not moved.`
+          : `Drive folders in ${targetAccount} are already ready. Shows assigned to other Drive accounts were not moved.`,
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not prepare Google Drive storage.");
     } finally {
@@ -591,7 +606,10 @@ export function App() {
             <div>
               <p className="eyebrow">Your storage</p>
               <h2>Google Drive</h2>
-              <p className="muted">Your permanent podcast files stay in your Drive. Each show receives its own Brand Assets, Templates and Episodes folders.</p>
+              <p className="muted">
+                Your permanent podcast files stay in your Drive. Each show receives its own Brand Assets, Templates and Episodes folders.
+                {activeGoogleDriveConnections.length > 1 && " You have multiple Drive accounts connected. Choose the specific account below; existing shows assigned to another Drive account will not be moved."}
+              </p>
             </div>
             <button
               type="button"
@@ -611,7 +629,11 @@ export function App() {
                 <article key={connection.id}>
                   <div>
                     <strong>{connection.accountEmail || "Google Drive"}</strong>
-                    <span>Connected with drive.file access only</span>
+                    <span>
+                      {activeGoogleDriveConnections.length > 1
+                        ? "Connected with drive.file access only · actions on this row affect this account only"
+                        : "Connected with drive.file access only"}
+                    </span>
                   </div>
                   <div className="inline-actions">
                     <button
@@ -620,7 +642,9 @@ export function App() {
                       onClick={() => void setupAllStorage(connection)}
                       disabled={busy}
                     >
-                      Prepare all active shows
+                      {activeGoogleDriveConnections.length > 1
+                        ? `Prepare in ${connection.accountEmail || "this Drive"}`
+                        : "Prepare / repair active shows"}
                     </button>
                   </div>
                 </article>
@@ -700,7 +724,7 @@ export function App() {
                         disabled={busy}
                       >
                         {show.storageConnectionId === connection.id
-                          ? "Repair Drive folders"
+                          ? `Repair in ${connection.accountEmail || "Google Drive"}`
                           : `Use ${connection.accountEmail || "Google Drive"}`}
                       </button>
                     ))}
