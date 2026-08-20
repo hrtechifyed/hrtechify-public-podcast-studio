@@ -19,6 +19,7 @@ import { handlePublishPreferencesApi } from "./publish-preferences-api";
 import { handleRenderApi } from "./render-api";
 import { applySecurityHeaders, enforceRequestSecurity, securityConfiguration } from "./security";
 import { handleStorageApi } from "./storage-api";
+import { handleStorageUploadCompatApi } from "./storage-upload-compat-api";
 
 export { PodcastRenderContainer, ContainerProxy } from "./render-container";
 export { PodcastRenderWorkflow } from "./render-workflow";
@@ -63,6 +64,7 @@ export default {
       handleBrandMediaApi,
       handleBackgroundRemovalApi,
       handleBrandAssetsApi,
+      handleStorageUploadCompatApi,
       handleDriveFileApi,
       handleDropboxFileApi,
       handleEditorialEditsApi,
