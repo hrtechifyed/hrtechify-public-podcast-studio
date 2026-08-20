@@ -128,11 +128,14 @@ export const buildDriveMultipartUpload = ({
     throw new SmallDriveUploadValidationError("multipart_boundary_invalid");
   }
 
+  const binaryBuffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(binaryBuffer).set(bytes);
+
   const body = new Blob([
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
     JSON.stringify(metadata),
     `\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
-    bytes,
+    binaryBuffer,
     `\r\n--${boundary}--\r\n`,
   ]);
 
