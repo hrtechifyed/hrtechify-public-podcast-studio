@@ -1,6 +1,7 @@
 import type { WorkerEnv } from "./db";
 import { nextOffsetFromGoogleRange } from "./drive-resumable";
 import { createGoogleDriveSession, GoogleDriveError, type GoogleDriveStoredFile } from "./google-drive";
+import type { BrandMediaAssetKind } from "./brand-media-resumable";
 import type { StorageConnectionRow } from "./storage-store";
 import { decryptStorageToken } from "./token-crypto";
 
@@ -157,6 +158,54 @@ export const startGoogleDriveResumableUpload = async (
   });
   if (!response.ok) throw responseError(response);
 
+  return {
+    sessionUrl: validateReturnedSessionUrl(response.headers.get("location")),
+  };
+};
+
+export const startGoogleDriveBrandMediaResumableUpload = async (
+  env: WorkerEnv,
+  userId: string,
+  connection: StorageConnectionRow,
+  input: {
+    showId: string;
+    showName: string;
+    assetKind: BrandMediaAssetKind;
+    fileName: string;
+    mimeType: string;
+    totalBytes: number;
+  },
+) => {
+  const drive = await createGoogleDriveSession(env, userId, connection);
+  const workspace = await drive.ensureShowWorkspace(input.showId, input.showName);
+  const accessToken = await refreshAccessToken(env, userId, connection);
+  const url = new URL(`${DRIVE_UPLOAD_API}/files`);
+  url.searchParams.set("uploadType", "resumable");
+  url.searchParams.set("fields", DRIVE_FILE_FIELDS);
+
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json; charset=UTF-8",
+      "x-upload-content-type": input.mimeType,
+      "x-upload-content-length": String(input.totalBytes),
+    },
+    body: JSON.stringify({
+      name: input.fileName,
+      parents: [workspace.folders.brandAssets],
+      appProperties: {
+        hrtechifyStudio: "v1",
+        role: "asset",
+        showId: input.showId,
+        folder: "brand-assets",
+        assetKind: input.assetKind,
+        original: "true",
+        immutable: "true",
+      },
+    }),
+  });
+  if (!response.ok) throw responseError(response);
   return {
     sessionUrl: validateReturnedSessionUrl(response.headers.get("location")),
   };
