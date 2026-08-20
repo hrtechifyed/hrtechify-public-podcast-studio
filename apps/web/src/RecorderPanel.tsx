@@ -43,6 +43,20 @@ const apiMimeType = (value: string) => {
   return normalized;
 };
 
+const mimeTypeFromFile = (file: File) => {
+  const declared = apiMimeType(file.type || "");
+  if (ALLOWED_UPLOAD_TYPES.has(declared)) return declared;
+  const extension = file.name.toLowerCase().match(/\.([^.]+)$/)?.[1];
+  switch (extension) {
+    case "webm": return "audio/webm";
+    case "mp3": return "audio/mpeg";
+    case "wav": return "audio/wav";
+    case "m4a": return "audio/x-m4a";
+    case "mp4": return "audio/mp4";
+    default: return declared;
+  }
+};
+
 const safeEpisodeFileName = (episodeName: string, mimeType: string) => {
   const cleaned = episodeName
     .trim()
@@ -207,7 +221,6 @@ export function RecorderPanel({ showId, showName, connectionId }: RecorderPanelP
         chunkCount: 0,
       });
 
-      localSessionIdRef.current = sessionId;
       setLocalSessionId(sessionId);
       setRecordingMimeType(recorder.mimeType || preferred);
       chunkIndexRef.current = 0;
@@ -332,7 +345,12 @@ export function RecorderPanel({ showId, showName, connectionId }: RecorderPanelP
         credentials: "same-origin",
         headers: { "x-hrtechify-upload-token": uploadToken },
       });
-      const payload = await response.json().catch(() => null) as { complete?: boolean; nextOffset?: number | null; file?: { webViewLink?: string | null }; error?: string } | null;
+      const payload = await response.json().catch(() => null) as {
+        complete?: boolean;
+        nextOffset?: number | null;
+        file?: { webViewLink?: string | null };
+        error?: string;
+      } | null;
       if (!response.ok) throw new Error(friendlyUploadError(payload?.error));
       if (payload?.complete) finalOpenUrl = payload.file?.webViewLink ?? null;
       return payload?.nextOffset ?? 0;
@@ -441,15 +459,14 @@ export function RecorderPanel({ showId, showName, connectionId }: RecorderPanelP
     event.target.value = "";
     if (!file) return;
     setError(null);
-    const normalized = apiMimeType(file.type);
+    const normalized = mimeTypeFromFile(file);
     if (!ALLOWED_UPLOAD_TYPES.has(normalized)) {
       setError("Use MP3, WAV, M4A, WebM or MP4 for an uploaded recording.");
       return;
     }
     try {
-      const extension = recordingExtensionForMimeType(normalized);
       const suppliedName = episodeName.trim() || file.name.replace(/\.[^.]+$/, "") || "HRPodcast";
-      await uploadImmutableOriginal(file, normalized, safeEpisodeFileName(suppliedName, normalized).replace(/\.[^.]+$/, `.${extension}`));
+      await uploadImmutableOriginal(file, normalized, safeEpisodeFileName(suppliedName, normalized));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not save the uploaded original.");
       setState("idle");
@@ -494,7 +511,7 @@ export function RecorderPanel({ showId, showName, connectionId }: RecorderPanelP
 
       <div className="inline-actions" style={{ marginTop: 12 }}>
         {(state === "idle" || state === "stopped" || state === "saved" || state === "error") && (
-          <button type="button" className="primary-action compact" onClick={() => void startRecording()} disabled={state === "uploading"}>Record here</button>
+          <button type="button" className="primary-action compact" onClick={() => void startRecording()}>Record here</button>
         )}
         {state === "recording" && <button type="button" className="secondary-action compact" onClick={() => void pauseRecording()}>Pause</button>}
         {state === "paused" && <button type="button" className="secondary-action compact" onClick={() => void resumeRecording()}>Resume</button>}
@@ -548,6 +565,3 @@ export function RecorderPanel({ showId, showName, connectionId }: RecorderPanelP
     </section>
   );
 }
-
-// MediaRecorder event callbacks need access to the current session ID without waiting for React state.
-const localSessionIdRef = { current: null as string | null };
