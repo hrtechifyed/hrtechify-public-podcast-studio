@@ -54,6 +54,7 @@ export function PrivacyPage() {
         <PrivacySection title="Where podcast files live">
           <p>Permanent podcast media is designed to remain in the storage you connect. With Google Drive, show folders hold Brand Assets, Templates and Episodes. D1 stores account, show, authentication and workflow metadata; it is not the permanent podcast-media library.</p>
           <p>Original recordings, original logo/profile uploads and intro/outro media are treated as immutable application originals. A newer upload creates another file rather than silently overwriting the previous original.</p>
+          <p>Derived caption files, technical masters, final MP3 files and final MP4 files are also stored as separate immutable application-created files. They never replace the source recording.</p>
           <p>Deleting a show from the Studio currently removes the show from the Studio but <strong>does not delete files already stored in your Google Drive</strong>. This is intentional to avoid destructive surprises.</p>
         </PrivacySection>
 
@@ -62,19 +63,29 @@ export function PrivacyPage() {
           <p>The original image remains unchanged. A generated result does not become the production choice automatically: you must explicitly choose <strong>Accept</strong>, <strong>Retry</strong>, or <strong>Keep Original</strong>.</p>
         </PrivacySection>
 
-        <PrivacySection title="Podcast transcription and edit analysis">
+        <PrivacySection title="Podcast transcription, captions and edit analysis">
           <p>Podcast speech analysis runs only when you explicitly choose <strong>Analyze original recording</strong>. The server reads the exact immutable episode original that belongs to your show and sends the audio to Cloudflare Workers AI for transcription and conservative edit-candidate detection. If the source is a video, Cloudflare Media Transformations may first extract its audio track.</p>
           <p>The current analyzer uses word timing to identify clear long pauses and repeated speech, and may use a text model to propose clear false starts, repeated speech or fumbles. It is specifically instructed not to propose removing ideas, opinions, meaningful hesitation, emphasis, accents, dialect, grammar choices or stylistic wording.</p>
-          <p><strong>Analysis never changes the original recording.</strong> The full transcript is used transiently during the analysis request and is not stored by the Studio in D1. D1 stores the resulting proposal ranges, explanations, confidence values, analysis-run metadata and your append-only decisions.</p>
+          <p><strong>Analysis never changes the original recording.</strong> D1 does not store the transcript text. To make captions reproducible, the exact recognized word tokens and their timestamps, plus a source WebVTT file, are saved as separate immutable files in the episode's connected Drive. Those files are tied to the exact source recording and exact completed analysis run.</p>
+          <p>D1 stores proposal ranges, explanations, confidence values, analysis-run metadata and your append-only decisions. It does not become the permanent transcript library.</p>
           <p>Every spoken or timing change remains a proposal until you explicitly choose <strong>Apply in final edit</strong>. Choosing <strong>Keep Original</strong> rejects that proposed change. Neither choice overwrites, trims or replaces the source file in your Drive.</p>
+          <p>The final downloadable WebVTT is derived from the recognized words after applying only your approved cut ranges. Remaining word timing is shifted to the edited timeline and offset by the selected intro duration. The Studio does not use this step to rewrite what was said.</p>
           <p>This processing is unrelated to Gmail. Podcast analysis does not request or use Gmail, Contacts or Calendar permissions.</p>
         </PrivacySection>
 
-        <PrivacySection title="Technical-master rendering">
-          <p>Audio rendering starts only after all proposed editorial changes have an explicit decision and you choose <strong>Create technical master</strong>. The render plan is assembled server-side from those stored decisions and the fixed HRTechify technical-cleanup profile; the browser cannot submit arbitrary cut ranges, FFmpeg filters, shell commands or loudness settings.</p>
+        <PrivacySection title="Templates and final publishing">
+          <p>The final video uses one of HRTechify's curated declarative templates. The browser may choose a template identifier and whether captions are burned into the MP4, but it cannot submit arbitrary FFmpeg filters, shell commands, font files, colors, coordinates, codecs or other free-form rendering instructions.</p>
+          <p>Each render snapshots the selected approved template version, show name, episode name, host name, caption choice, exact analysis run and user-approved edit ranges. The final MP4 always includes <strong>{PLATFORM_CREDIT}</strong>; that credit is part of the fixed template contract and is not removable.</p>
+          <p>A downloadable WebVTT caption file is created for the final timeline even when burned-in captions are turned off.</p>
+        </PrivacySection>
+
+        <PrivacySection title="Technical master and final MP3/MP4 rendering">
+          <p>Rendering starts only after all proposed editorial changes have an explicit decision and you choose the final render action. The render plan is assembled server-side from those stored decisions, the fixed HRTechify technical-cleanup profile and your saved curated-template choice.</p>
           <p>The exact immutable episode source is streamed from its assigned Google Drive connection into an isolated Cloudflare Container running FFmpeg. The render container has public internet access disabled. Google OAuth credentials and Google Drive resumable-upload URLs are never passed into the container.</p>
-          <p>Temporary source and working audio exist only on the container's ephemeral disk while that render runs. The resulting technical master is streamed back through the Worker and saved as a separate immutable FLAC in the same show's Episodes folder. Temporary container files are removed after the operation and the original Drive recording is never overwritten.</p>
-          <p>Technical cleanup is currently limited to two-pass loudness/peak normalization under the fixed podcast profile. Outside user-approved editorial cuts, the render verifies duration integrity and does not apply speaking-speed or pitch-changing filters.</p>
+          <p>Temporary source and working media exist only on the container's ephemeral disk while that render runs. The technical master is saved as a separate immutable FLAC. The Studio then creates a separate final MP3, final MP4 and final WebVTT in the same show's Episodes folder.</p>
+          <p>The current immutable show intro and outro are read as optional inputs when present. They are never modified. Audio-only intro/outro assets can be combined with a template-color visual for the video; video intro/outro assets are fitted into the final 1920 × 1080 frame.</p>
+          <p>Technical cleanup uses two-pass loudness/peak normalization under the fixed podcast profile. Outside user-approved editorial cuts, the render verifies duration integrity and does not apply speaking-speed or pitch-changing filters. The final MP3 uses fixed podcast output settings and the final MP4 uses fixed H.264/AAC output settings.</p>
+          <p>The workflow is retry-safe: output files are tagged with the exact source file and render-job identity so a retry can reuse the same derived output instead of intentionally creating duplicates.</p>
         </PrivacySection>
 
         <PrivacySection title="Passwords and account recovery">
@@ -89,7 +100,7 @@ export function PrivacyPage() {
         </PrivacySection>
 
         <PrivacySection title="Services involved">
-          <p><strong>Cloudflare</strong> runs the Worker and D1 database, the image-processing binding used when you explicitly request background removal, Workers AI used when you explicitly request podcast analysis, Media Transformations when a video source needs its audio extracted for analysis, and isolated Workflows/Containers used after you explicitly confirm technical-master rendering.</p>
+          <p><strong>Cloudflare</strong> runs the Worker and D1 database, the image-processing binding used when you explicitly request background removal, Workers AI used when you explicitly request podcast analysis, Media Transformations when a video source needs its audio extracted for analysis, and isolated Workflows/Containers used after you explicitly confirm rendering.</p>
           <p><strong>Google</strong> provides optional Google Sign-In and, separately, optional Google Drive storage when you authorize it.</p>
           <p><strong>Transactional email</strong> is used only for account verification, password recovery, or other account-authentication emails when email delivery is enabled. The current codebase uses a configured Resend integration for that delivery; HRTechify does not need Gmail inbox access to send those emails.</p>
         </PrivacySection>
