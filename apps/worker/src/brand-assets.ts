@@ -101,3 +101,19 @@ export const parseBrandAssetUploadInput = (input: {
     contentLength,
   };
 };
+
+export const validateBrandAssetBody = (
+  bytes: Uint8Array,
+  declaredLength: number,
+) => {
+  if (bytes.byteLength === 0) {
+    throw new BrandAssetValidationError("brand_asset_empty");
+  }
+  if (bytes.byteLength > MAX_BRAND_ASSET_BYTES) {
+    throw new BrandAssetValidationError("brand_asset_too_large", 413);
+  }
+  if (bytes.byteLength !== declaredLength) {
+    throw new BrandAssetValidationError("content_length_mismatch");
+  }
+  return bytes;
+};
