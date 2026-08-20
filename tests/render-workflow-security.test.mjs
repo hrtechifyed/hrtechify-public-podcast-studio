@@ -50,7 +50,7 @@ test("render source is bounded before container disk use and reverified against 
   assert.match(workflow, /MAX_RENDER_SOURCE_BYTES = 1024 \* 1024 \* 1024/);
   assert.match(workflow, /episode\.source_size_bytes > MAX_RENDER_SOURCE_BYTES/);
   assert.match(workflow, /render_source_too_large/);
-  assert.match(workflow, /source\.file\.sizeBytes !== episode\.source_size_bytes/);
+  assert.match(workflow, /sourceMetadata\.sizeBytes !== episode\.source_size_bytes/);
   assert.match(workflow, /render_source_not_immutable_original/);
 });
 
@@ -62,7 +62,7 @@ test("FFmpeg container has no public internet and uses direct fixed executable a
   assert.equal(config.workflows[0].class_name, "PodcastRenderWorkflow");
   assert.match(container, /enableInternet = false/);
   assert.match(container, /this\.start\(\{ enableInternet: false \}\)/);
-  assert.match(container, /this\.requireRuntime\(\)\.exec\(\["tee", SOURCE_PATH\]/);
+  assert.match(container, /this\.requireRuntime\(\)\.exec\(\["tee", path\]/);
   assert.match(container, /"ffmpeg"/);
   assert.doesNotMatch(container, /atempo=/);
   assert.doesNotMatch(container, /asetrate=/);
@@ -103,7 +103,7 @@ test("Google credentials stay in Worker code and are never supplied to the rende
 });
 
 test("UI requires explicit render confirmation and sends no processing plan from the browser", () => {
-  assert.match(ui, /Create technical master/);
+  assert.match(ui, /Create final MP3 \+ MP4/);
   assert.match(ui, /method: "POST"/);
   assert.doesNotMatch(ui, /body: JSON\.stringify/);
   assert.match(ui, /Only edit ranges you explicitly marked/);
