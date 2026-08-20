@@ -19,7 +19,7 @@ Templates should support, as applicable:
 
 Every template must reserve a safe bottom-right area for:
 
-**Podcast Powered by HRTechify**
+**Powered by HRTechify**
 
 This credit is a renderer-enforced product rule, not a user-removable template option.
 
@@ -61,7 +61,7 @@ A custom template package may include a validated manifest and approved image/vi
     "captions": {}
   },
   "platformCredit": {
-    "text": "Podcast Powered by HRTechify",
+    "text": "Powered by HRTechify",
     "required": true,
     "position": "bottom-right"
   }
