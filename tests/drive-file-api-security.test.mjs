@@ -7,8 +7,10 @@ const indexSource = await readFile(new URL("../apps/worker/src/index.ts", import
 
 test("Drive file API requires authenticated identity and tenant-scoped lookups", () => {
   assert.match(apiSource, /requireVerifiedIdentity\(request, env\)/);
-  assert.match(apiSource, /getShowForUser\(db, identity\.userId, input\.showId\)/);
-  assert.match(apiSource, /getStorageConnectionForUser\(db, identity\.userId, input\.connectionId\)/);
+  assert.match(apiSource, /loadAssignedDriveContext/);
+  assert.match(apiSource, /getShowForUser\(db, userId, showId\)/);
+  assert.match(apiSource, /getStorageConnectionForUser\(db, userId, connectionId\)/);
+  assert.match(apiSource, /identity\.userId/);
 });
 
 test("Drive file API rejects inactive shows and wrong storage assignment", () => {
@@ -18,9 +20,9 @@ test("Drive file API rejects inactive shows and wrong storage assignment", () =>
   assert.match(apiSource, /show_storage_connection_mismatch/);
 });
 
-test("Drive file API only exposes the explicit small-file POST route", () => {
+test("Drive file API keeps the explicit small-file POST route", () => {
   assert.match(apiSource, /\/api\/storage\/google-drive\/files\/small/);
-  assert.match(apiSource, /request\.method !== "POST"/);
+  assert.match(apiSource, /isSmallUpload && request\.method !== "POST"/);
 });
 
 test("Drive file API is routed before the generic storage handler", () => {
