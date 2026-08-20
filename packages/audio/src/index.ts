@@ -44,7 +44,18 @@ export interface TechnicalCleanupPlan {
   adjustments: readonly TechnicalCleanupRule[];
 }
 
-export const PODCAST_TECHNICAL_CLEANUP_PROFILE_V1 = Object.freeze({
+const PODCAST_TECHNICAL_CLEANUP_RULES_V1 = [
+  { adjustment: "level_balancing", condition: "always", maxStrength: "gentle" },
+  { adjustment: "peak_protection", condition: "always", maxStrength: "gentle" },
+  { adjustment: "compression", condition: "when_detected", maxStrength: "gentle" },
+  { adjustment: "noise_control", condition: "when_detected", maxStrength: "gentle" },
+  { adjustment: "hum_control", condition: "when_detected", maxStrength: "gentle" },
+  { adjustment: "click_reduction", condition: "when_detected", maxStrength: "gentle" },
+  { adjustment: "de_essing", condition: "when_detected", maxStrength: "gentle" },
+  { adjustment: "plosive_control", condition: "when_detected", maxStrength: "gentle" },
+] as const satisfies readonly TechnicalCleanupRule[];
+
+export const PODCAST_TECHNICAL_CLEANUP_PROFILE_V1: TechnicalCleanupProfile = Object.freeze({
   version: "podcast-cleanup-v1",
   targetIntegratedLoudnessLkfs: -16,
   loudnessToleranceDb: 1,
@@ -53,17 +64,8 @@ export const PODCAST_TECHNICAL_CLEANUP_PROFILE_V1 = Object.freeze({
   preserveTiming: true,
   preservePitch: true,
   preserveSpeakingSpeed: true,
-  rules: Object.freeze([
-    { adjustment: "level_balancing", condition: "always", maxStrength: "gentle" },
-    { adjustment: "peak_protection", condition: "always", maxStrength: "gentle" },
-    { adjustment: "compression", condition: "when_detected", maxStrength: "gentle" },
-    { adjustment: "noise_control", condition: "when_detected", maxStrength: "gentle" },
-    { adjustment: "hum_control", condition: "when_detected", maxStrength: "gentle" },
-    { adjustment: "click_reduction", condition: "when_detected", maxStrength: "gentle" },
-    { adjustment: "de_essing", condition: "when_detected", maxStrength: "gentle" },
-    { adjustment: "plosive_control", condition: "when_detected", maxStrength: "gentle" },
-  ]),
-}) satisfies TechnicalCleanupProfile;
+  rules: Object.freeze(PODCAST_TECHNICAL_CLEANUP_RULES_V1),
+});
 
 const TECHNICAL_ADJUSTMENT_SET = new Set<string>(TECHNICAL_ADJUSTMENTS);
 
