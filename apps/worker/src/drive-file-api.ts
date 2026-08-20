@@ -18,6 +18,7 @@ import {
   parseSmallDriveUploadBody,
   SmallDriveUploadValidationError,
 } from "./drive-upload";
+import { ensureEpisodeFromVerifiedOriginal } from "./episodes";
 import {
   queryGoogleDriveResumableStatus,
   startGoogleDriveResumableUpload,
@@ -25,6 +26,7 @@ import {
   type ResumableChunkResult,
 } from "./google-drive-resumable";
 import { createGoogleDriveSession, GoogleDriveError } from "./google-drive";
+import { isEpisodeSchemaReady } from "./schema-readiness";
 import { getShowForUser } from "./shows";
 import {
   getStorageConnectionForUser,
@@ -288,6 +290,23 @@ export const handleDriveFileApi = async (
         }, 202);
       }
 
+      let episode: Awaited<ReturnType<typeof ensureEpisodeFromVerifiedOriginal>> | null = null;
+      let episodeTracking: "registered" | "schema_not_ready" | "registration_failed" = "schema_not_ready";
+      if (result.file && (await isEpisodeSchemaReady(db))) {
+        try {
+          episode = await ensureEpisodeFromVerifiedOriginal(
+            db,
+            identity.userId,
+            show,
+            connection,
+            result.file,
+          );
+          episodeTracking = "registered";
+        } catch {
+          episodeTracking = "registration_failed";
+        }
+      }
+
       return json({
         complete: true,
         showId: show.id,
@@ -295,6 +314,17 @@ export const handleDriveFileApi = async (
         provider: "google-drive",
         file: result.file,
         openUrl: result.file?.webViewLink ?? null,
+        episodeTracking,
+        episode: episode
+          ? {
+              id: episode.id,
+              showId: episode.show_id,
+              title: episode.title,
+              status: episode.status,
+              createdAt: episode.created_at,
+              updatedAt: episode.updated_at,
+            }
+          : null,
       }, 201);
     }
 
