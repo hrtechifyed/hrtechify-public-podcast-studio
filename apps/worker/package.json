@@ -9,7 +9,9 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@hrtechify/shared": "0.1.0"
+    "@hrtechify/audio": "0.1.0",
+    "@hrtechify/shared": "0.1.0",
+    "@hrtechify/templates": "0.1.0"
   },
   "devDependencies": {
     "wrangler": "^4.31.0"
