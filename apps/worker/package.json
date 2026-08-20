@@ -7,6 +7,7 @@
     "dev": "wrangler dev",
     "build": "npm --prefix ../web run build && tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "validate:deployment": "wrangler deploy --dry-run",
     "deploy": "wrangler deploy",
     "db:migrations:list": "wrangler d1 migrations list hrtechify-public-podcast-studio --remote",
     "db:migrate:local": "wrangler d1 migrations apply hrtechify-public-podcast-studio --local",
