@@ -134,7 +134,7 @@ const startGoogleDrive = async (
   const requestUrl = new URL(request.url);
   const returnTo = safeReturnTo(requestUrl.searchParams.get("returnTo"));
   const state = randomToken(32);
-  const stateHash = await sha256BaseUrl(state);
+  const stateHash = await sha256Base64Url(state);
   const verifier = randomToken(64);
   const challenge = await pkceChallenge(verifier);
 
@@ -304,15 +304,10 @@ const provisionActiveShowWorkspaces = async (
     throw new GoogleDriveError("google_drive_connection_selection_required", 409);
   }
 
-  const shows = (await listShowsForUser(db, userId)).filter(
-    (show) =>
-      show.status === "active" &&
-      (replaceExisting || !show.storage_connection_id || show.storage_connection_id === connection.id),
-  );
-
+  const shows = (await listShowsForUser(db, userId)).filter((show) => show.status === "active");
   const session = await createGoogleDriveSession(env, userId, connection);
-  const provisioned = [];
-  const skipped = [];
+  const provisioned: Array<Record<string, unknown>> = [];
+  const skipped: Array<{ showId: string; reason: string }> = [];
 
   for (const show of shows) {
     if (!replaceExisting && show.storage_connection_id && show.storage_connection_id !== connection.id) {
@@ -325,7 +320,7 @@ const provisionActiveShowWorkspaces = async (
     provisioned.push({
       showId: show.id,
       connectionId: connection.id,
-      provider: "google-drive" as const,
+      provider: "google-drive",
       accountEmail: connection.provider_account_email,
       ...workspace,
     });
