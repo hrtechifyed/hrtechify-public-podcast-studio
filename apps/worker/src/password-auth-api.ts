@@ -18,6 +18,7 @@ import {
   savePasswordVerification,
   upsertPasswordCredential,
 } from "./password-auth-store";
+import { isPasswordAuthSchemaReady } from "./schema-readiness";
 import { createSessionCookie } from "./session";
 import { findOrCreateUserForProvider, getUserByEmail } from "./users";
 
@@ -67,6 +68,17 @@ const sessionKey = (env: WorkerEnv) => {
 const passwordDbConfigured = (env: WorkerEnv) => Boolean(env.DB && env.SESSION_SIGNING_KEY);
 const passwordEmailConfigured = (env: WorkerEnv) => passwordDbConfigured(env) && isEmailDeliveryConfigured(env);
 
+const passwordSchemaReady = async (env: WorkerEnv) => {
+  if (!passwordDbConfigured(env)) return false;
+  return isPasswordAuthSchemaReady(requireDatabase(env));
+};
+
+const requirePasswordSchema = async (env: WorkerEnv) => {
+  if (!(await passwordSchemaReady(env))) {
+    throw new PasswordValidationError("password_schema_not_ready", 503);
+  }
+};
+
 const rateKey = async (action: string, email: string) =>
   sha256Base64Url(`${action}:${normalizeEmail(email)}`);
 
@@ -80,6 +92,7 @@ const sessionForUser = async (
 
 const signup = async (request: Request, env: WorkerEnv) => {
   if (!passwordEmailConfigured(env)) return json({ error: "password_signup_not_configured" }, 503);
+  await requirePasswordSchema(env);
   const body = await parseJson(request);
   const email = validEmail(body.email);
   const password = validateNewPassword(body.password);
@@ -115,6 +128,7 @@ const signup = async (request: Request, env: WorkerEnv) => {
 
 const verifySignup = async (request: Request, env: WorkerEnv) => {
   if (!passwordDbConfigured(env)) return redirect("/?auth=error&reason=authentication_not_configured");
+  if (!(await passwordSchemaReady(env))) return redirect("/?auth=error&reason=password_schema_not_ready");
   const token = new URL(request.url).searchParams.get("token") ?? "";
   if (!/^[A-Za-z0-9_-]{20,200}$/.test(token)) {
     return redirect("/?auth=error&reason=password_verification_invalid_or_expired");
@@ -137,6 +151,7 @@ const verifySignup = async (request: Request, env: WorkerEnv) => {
 
 const signin = async (request: Request, env: WorkerEnv) => {
   if (!passwordDbConfigured(env)) return json({ error: "password_signin_not_configured" }, 503);
+  await requirePasswordSchema(env);
   const body = await parseJson(request);
   const email = validEmail(body.email);
   const password = typeof body.password === "string" ? body.password : "";
@@ -173,6 +188,7 @@ const signin = async (request: Request, env: WorkerEnv) => {
 
 const forgotPassword = async (request: Request, env: WorkerEnv) => {
   if (!passwordEmailConfigured(env)) return json({ error: "password_reset_not_configured" }, 503);
+  await requirePasswordSchema(env);
   const body = await parseJson(request);
   const email = validEmail(body.email);
   const db = requireDatabase(env);
@@ -200,6 +216,7 @@ const forgotPassword = async (request: Request, env: WorkerEnv) => {
 
 const resetPassword = async (request: Request, env: WorkerEnv) => {
   if (!passwordDbConfigured(env)) return json({ error: "password_reset_not_configured" }, 503);
+  await requirePasswordSchema(env);
   const body = await parseJson(request);
   const token = String(body.token ?? "");
   if (!/^[A-Za-z0-9_-]{20,200}$/.test(token)) {
@@ -217,11 +234,15 @@ const resetPassword = async (request: Request, env: WorkerEnv) => {
   return json({ ok: true, message: "Your password has been updated. You can now sign in." });
 };
 
-export const passwordAuthConfiguration = (env: WorkerEnv) => ({
-  signin: passwordDbConfigured(env),
-  signup: passwordEmailConfigured(env),
-  recovery: passwordEmailConfigured(env),
-});
+export const passwordAuthConfiguration = async (env: WorkerEnv) => {
+  const schemaReady = await passwordSchemaReady(env);
+  return {
+    signin: schemaReady,
+    signup: schemaReady && passwordEmailConfigured(env),
+    recovery: schemaReady && passwordEmailConfigured(env),
+    schemaReady,
+  };
+};
 
 export const handlePasswordAuthApi = async (
   request: Request,
