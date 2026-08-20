@@ -250,12 +250,16 @@ export const handleDriveFileApi = async (
           request.headers.get("content-length"),
           payload.totalBytes,
         );
+        const chunkBody = await request.arrayBuffer();
+        if (chunkBody.byteLength !== parsedRange.length) {
+          throw new ResumableUploadValidationError("resumable_chunk_body_length_mismatch");
+        }
         result = await uploadGoogleDriveResumableChunk(env, identity.userId, connection, {
           sessionUrl: payload.sessionUrl,
           contentRange: `bytes ${parsedRange.start}-${parsedRange.end}/${parsedRange.totalBytes}`,
           contentLength: parsedRange.length,
           mimeType: payload.mimeType,
-          body: request.body,
+          body: chunkBody,
         });
       } else {
         result = await queryGoogleDriveResumableStatus(env, identity.userId, connection, {
