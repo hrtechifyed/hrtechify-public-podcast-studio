@@ -13,7 +13,11 @@ import { handleEditorialEditsApi } from "./editorial-edits-api";
 import { handleEpisodeApi } from "./episode-api";
 import { handlePasswordAuthApi } from "./password-auth-api";
 import { handleProtectedApi } from "./protected-api";
+import { handleRenderApi } from "./render-api";
 import { handleStorageApi } from "./storage-api";
+
+export { PodcastRenderContainer, ContainerProxy } from "./render-container";
+export { PodcastRenderWorkflow } from "./render-workflow";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body, null, 2), {
@@ -63,6 +67,9 @@ export default {
 
     const editorialEditsResponse = await handleEditorialEditsApi(request, url, env);
     if (editorialEditsResponse) return editorialEditsResponse;
+
+    const renderResponse = await handleRenderApi(request, url, env);
+    if (renderResponse) return renderResponse;
 
     const episodeResponse = await handleEpisodeApi(request, url, env);
     if (episodeResponse) return episodeResponse;
