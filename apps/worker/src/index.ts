@@ -1,5 +1,6 @@
 import {
-  MAX_ACTIVE_SHOWS_PER_USER,
+  MAX_MUSIC_CUES_PER_EPISODE,
+  MAX_SHOWS_PER_USER,
   PLATFORM_CREDIT,
   PLATFORM_CREDIT_POSITION,
 } from "@hrtechify/shared";
@@ -29,9 +30,12 @@ export default {
 
     if (url.pathname === "/api/config") {
       return json({
-        maxActiveShowsPerUser: MAX_ACTIVE_SHOWS_PER_USER,
+        maxShowsPerUser: MAX_SHOWS_PER_USER,
+        maxMusicCuesPerEpisode: MAX_MUSIC_CUES_PER_EPISODE,
         platformCredit: PLATFORM_CREDIT,
         platformCreditPosition: PLATFORM_CREDIT_POSITION,
+        googleDriveClientId: env.GOOGLE_AUTH_CLIENT_ID ?? null,
+        googleDriveScope: "https://www.googleapis.com/auth/drive.file",
       });
     }
 
