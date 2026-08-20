@@ -6,6 +6,7 @@ import { decryptStorageToken } from "./token-crypto";
 const DROPBOX_API = "https://api.dropboxapi.com/2";
 const DROPBOX_CONTENT_API = "https://content.dropboxapi.com/2";
 const STUDIO_ROOT = "/HRTechify Podcast Studio";
+const STREAM_CHUNK_BYTES = 8 * 1024 * 1024;
 
 interface DropboxTokenResponse {
   access_token?: string;
@@ -24,10 +25,8 @@ interface DropboxMetadata {
   content_hash?: string;
 }
 
-interface DropboxCreateFolderResponse {
-  metadata?: DropboxMetadata;
-}
-
+interface DropboxCreateFolderResponse { metadata?: DropboxMetadata }
+interface DropboxUploadSessionStartResponse { session_id?: string }
 interface DropboxListFolderResponse {
   entries?: DropboxMetadata[];
   cursor?: string;
@@ -97,6 +96,7 @@ const dropboxErrorFromResponse = async (response: Response): Promise<DropboxErro
   if (response.status === 401) return new DropboxError("dropbox_authorization_expired", 401);
   if (response.status === 403) return new DropboxError("dropbox_permission_denied", 403);
   if (response.status === 409 && summary.includes("not_found")) return new DropboxError("dropbox_resource_not_found", 404);
+  if (response.status === 409 && summary.includes("incorrect_offset")) return new DropboxError("dropbox_upload_offset_mismatch", 409);
   if (response.status === 409) return new DropboxError("dropbox_conflict", 409);
   if (response.status === 429) return new DropboxError("dropbox_rate_limited", 429);
   if (response.status >= 500) return new DropboxError("dropbox_retryable", 503);
@@ -153,6 +153,25 @@ const apiJson = async <T>(accessToken: string, endpoint: string, body: unknown):
   });
   if (!response.ok) throw await dropboxErrorFromResponse(response);
   return (await response.json()) as T;
+};
+
+const contentCall = async (
+  accessToken: string,
+  endpoint: string,
+  arg: unknown,
+  body: ArrayBuffer,
+) => {
+  const response = await fetch(`${DROPBOX_CONTENT_API}${endpoint}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/octet-stream",
+      "dropbox-api-arg": JSON.stringify(arg),
+    },
+    body,
+  });
+  if (!response.ok) throw await dropboxErrorFromResponse(response);
+  return response;
 };
 
 const getMetadataOrNull = async (accessToken: string, path: string) => {
@@ -220,6 +239,54 @@ const expectedFolderForAsset = (showId: string, pathLower: string) => {
   return pathLower.startsWith(brand) || pathLower.startsWith(episodes) || pathLower.startsWith(templates);
 };
 
+const destinationPath = (
+  workspace: DropboxWorkspace,
+  folder: "brand-assets" | "templates" | "episodes",
+  fileName: string,
+) => {
+  const parent = folder === "brand-assets"
+    ? workspace.folders.brandAssets
+    : folder === "templates"
+      ? workspace.folders.templates
+      : workspace.folders.episodes;
+  return `${parent}/${cleanSegment(fileName)}`;
+};
+
+const readStreamChunks = async function* (
+  body: ReadableStream<Uint8Array>,
+  totalBytes: number,
+): AsyncGenerator<ArrayBuffer> {
+  const reader = body.getReader();
+  let pending = new Uint8Array(0);
+  let consumed = 0;
+  try {
+    while (consumed < totalBytes) {
+      while (pending.byteLength < STREAM_CHUNK_BYTES && consumed + pending.byteLength < totalBytes) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!value?.byteLength) continue;
+        const merged = new Uint8Array(pending.byteLength + value.byteLength);
+        merged.set(pending, 0);
+        merged.set(value, pending.byteLength);
+        pending = merged;
+      }
+      if (!pending.byteLength) break;
+      const take = Math.min(STREAM_CHUNK_BYTES, pending.byteLength, totalBytes - consumed);
+      const chunk = pending.slice(0, take);
+      pending = pending.slice(take);
+      consumed += take;
+      yield chunk.buffer;
+    }
+    if (consumed !== totalBytes || pending.byteLength !== 0) {
+      throw new DropboxError("dropbox_stream_size_mismatch", 409);
+    }
+    const tail = await reader.read();
+    if (!tail.done && tail.value?.byteLength) throw new DropboxError("dropbox_stream_size_mismatch", 409);
+  } finally {
+    reader.releaseLock();
+  }
+};
+
 export const createDropboxSession = async (
   env: WorkerEnv,
   userId: string,
@@ -269,25 +336,98 @@ export const createDropboxSession = async (
       },
     ) {
       const workspace = await ensureShowWorkspace(showId, showName);
-      const parent = input.folder === "brand-assets" ? workspace.folders.brandAssets : workspace.folders.episodes;
-      const path = `${parent}/${cleanSegment(input.fileName)}`;
-      const response = await fetch(`${DROPBOX_CONTENT_API}/files/upload`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${accessToken}`,
-          "content-type": "application/octet-stream",
-          "dropbox-api-arg": JSON.stringify({
+      const path = destinationPath(workspace, input.folder, input.fileName);
+      const response = await contentCall(accessToken, "/files/upload", {
+        path,
+        mode: "add",
+        autorename: true,
+        mute: true,
+        strict_conflict: true,
+      }, input.bytes.slice().buffer);
+      return serialize((await response.json()) as DropboxMetadata, showId);
+    },
+    async uploadStreamFile(
+      showId: string,
+      showName: string,
+      input: {
+        folder: "brand-assets" | "templates" | "episodes";
+        fileName: string;
+        totalBytes: number;
+        body: ReadableStream<Uint8Array>;
+      },
+    ) {
+      if (!Number.isSafeInteger(input.totalBytes) || input.totalBytes <= 0) {
+        throw new DropboxError("dropbox_upload_size_invalid", 400);
+      }
+      const workspace = await ensureShowWorkspace(showId, showName);
+      const path = destinationPath(workspace, input.folder, input.fileName);
+      const chunks = readStreamChunks(input.body, input.totalBytes);
+      const first = await chunks.next();
+      if (first.done || !first.value) throw new DropboxError("dropbox_upload_empty", 400);
+      const startResponse = await contentCall(
+        accessToken,
+        "/files/upload_session/start",
+        { close: first.value.byteLength === input.totalBytes },
+        first.value,
+      );
+      const started = (await startResponse.json()) as DropboxUploadSessionStartResponse;
+      if (!started.session_id) throw new DropboxError("dropbox_upload_session_missing", 502);
+      let offset = first.value.byteLength;
+      let next = await chunks.next();
+      while (!next.done && next.value) {
+        const current = next.value;
+        const after = await chunks.next();
+        const final = after.done;
+        if (final) {
+          const finished = await contentCall(
+            accessToken,
+            "/files/upload_session/finish",
+            {
+              cursor: { session_id: started.session_id, offset },
+              commit: {
+                path,
+                mode: "add",
+                autorename: true,
+                mute: true,
+                strict_conflict: true,
+              },
+            },
+            current,
+          );
+          const metadata = (await finished.json()) as DropboxMetadata;
+          const serialized = serialize(metadata, showId);
+          if (serialized.sizeBytes !== input.totalBytes) throw new DropboxError("dropbox_upload_size_mismatch", 502);
+          return serialized;
+        }
+        await contentCall(
+          accessToken,
+          "/files/upload_session/append_v2",
+          { cursor: { session_id: started.session_id, offset }, close: false },
+          current,
+        );
+        offset += current.byteLength;
+        next = after;
+      }
+
+      const finished = await contentCall(
+        accessToken,
+        "/files/upload_session/finish",
+        {
+          cursor: { session_id: started.session_id, offset },
+          commit: {
             path,
             mode: "add",
             autorename: true,
             mute: true,
             strict_conflict: true,
-          }),
+          },
         },
-        body: input.bytes.slice().buffer,
-      });
-      if (!response.ok) throw await dropboxErrorFromResponse(response);
-      return serialize((await response.json()) as DropboxMetadata, showId);
+        new ArrayBuffer(0),
+      );
+      const metadata = (await finished.json()) as DropboxMetadata;
+      const serialized = serialize(metadata, showId);
+      if (serialized.sizeBytes !== input.totalBytes) throw new DropboxError("dropbox_upload_size_mismatch", 502);
+      return serialized;
     },
     async listFolder(showId: string, showName: string, folder: "brand-assets" | "templates" | "episodes") {
       const workspace = await ensureShowWorkspace(showId, showName);
