@@ -9,6 +9,7 @@ import { handleBackgroundRemovalApi } from "./background-removal-api";
 import { handleBrandAssetsApi } from "./brand-assets-api";
 import { handleBrandMediaApi } from "./brand-media-api";
 import { handleDriveFileApi } from "./drive-file-api";
+import { handlePasswordAuthApi } from "./password-auth-api";
 import { handleProtectedApi } from "./protected-api";
 import { handleStorageApi } from "./storage-api";
 
@@ -39,6 +40,9 @@ export default {
         platformCreditPosition: PLATFORM_CREDIT_POSITION,
       });
     }
+
+    const passwordAuthResponse = await handlePasswordAuthApi(request, url, env);
+    if (passwordAuthResponse) return passwordAuthResponse;
 
     const authResponse = await handleAuthApi(request, url, env);
     if (authResponse) return authResponse;
