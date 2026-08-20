@@ -125,7 +125,6 @@ const startGoogleDrive = async (
   authorizationUrl.searchParams.set("code_challenge", challenge);
   authorizationUrl.searchParams.set("code_challenge_method", "S256");
   authorizationUrl.searchParams.set("access_type", "offline");
-  authorizationUrl.searchParams.set("include_granted_scopes", "true");
   authorizationUrl.searchParams.set("prompt", "consent select_account");
 
   return redirect(authorizationUrl.toString());
