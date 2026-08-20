@@ -46,6 +46,14 @@ test("render API is authenticated schema-gated and routed before generic Episode
   assert.ok(renderPosition >= 0 && episodePosition > renderPosition);
 });
 
+test("render source is bounded before container disk use and reverified against the episode snapshot", () => {
+  assert.match(workflow, /MAX_RENDER_SOURCE_BYTES = 1024 \* 1024 \* 1024/);
+  assert.match(workflow, /episode\.source_size_bytes > MAX_RENDER_SOURCE_BYTES/);
+  assert.match(workflow, /render_source_too_large/);
+  assert.match(workflow, /source\.file\.sizeBytes !== episode\.source_size_bytes/);
+  assert.match(workflow, /render_source_not_immutable_original/);
+});
+
 test("FFmpeg container has no public internet and uses direct fixed executable arguments", () => {
   const config = JSON.parse(wrangler);
   assert.equal(config.containers[0].class_name, "PodcastRenderContainer");
