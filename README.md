@@ -4,38 +4,74 @@
 
 HRTechify Public Podcast Studio is an open-source, privacy-first, multi-user podcast production platform by **HRTechify — People • Technology • Growth**.
 
-The product is designed to reproduce the proven workflow of the existing HRTechify podcast studio as a completely independent public project, while adding multi-user accounts, up to five active shows per user, direct browser recording, user-owned cloud storage, per-show branding, transparent-logo processing, templates, approval-controlled speech edits, and public documentation about how voice and data are handled.
+The project is completely independent from HRTechify's private podcast repository. It is designed for multiple creators, up to five shows per user, browser recording or audio upload, user-owned Google Drive storage, literary templates, template-owned CC0 background music, approval-controlled speech edits and transparent documentation about how voice and data are handled.
 
 ## Core product principles
 
-- One user account may have up to **5 active shows**.
-- Every show has its own name, host name, logo, profile picture, intro/outro, template preferences, episodes and storage destination.
-- Users choose where permanent podcast media is stored. The initial providers are **Google Drive** and **Dropbox**.
+- One user account may keep up to **5 non-deleted shows total**.
+- When five shows exist, the Studio tells the user to delete one before creating another.
+- Every show has its own name, host, optional creator logo, templates, episodes and Google Drive workspace.
+- Creator **profile photographs are never rendered inside templates**.
+- Google Drive is the first implemented permanent-media destination. Every show's episodes live inside that show's Drive folder.
 - Users may **record directly in the browser** or upload an existing audio recording.
 - The original source recording is preserved and never overwritten by the production pipeline.
 - Technical audio cleanup may be automated, but proposed edits that remove or change spoken content require explicit user approval.
-- Users may upload their own logo. The studio may offer to create a transparent-background version, but only after asking the user and preserving the original.
-- Every generated podcast video must visibly carry **“Podcast Powered by HRTechify”** in the bottom-right corner on every approved template.
-- Creator branding remains primary; the HRTechify platform credit is visible but secondary.
+- Built-in templates use creative literary art direction, readable cursive accents and **no formal information boxes** in the rendered design.
+- Every built-in template owns three optional **HRTechify procedural CC0-1.0 music choices**.
+- An episode may use up to three different music cues at very-subtle, subtle or moderately-subtle level, either throughout or in non-overlapping intervals.
+- Every generated podcast video must visibly carry **“Podcast Powered by HRTechify”** in the bottom-right corner.
 - The public repository contains source code and documentation, but never production secrets, OAuth tokens or user media.
 
-## Product flow
+## Current Studio flow
 
 1. Create or sign in to an account.
-2. Connect a storage provider.
-3. Create a show, up to the five-show limit.
-4. Add show branding and optionally create a transparent-logo variant.
-5. Select a template.
-6. Create an episode.
-7. Record in the browser or upload audio.
-8. Preserve the original in the user's selected storage.
-9. Analyse audio and propose speech/timing edits.
-10. Let the user approve or reject proposed spoken-content edits.
-11. Confirm the final Show / Episode / Host text, logo and template.
-12. Render mastered audio and a branded video.
-13. Add the mandatory **Podcast Powered by HRTechify** footer.
-14. Save final outputs to the user's selected storage.
-15. Remove temporary processing media according to the retention policy.
+2. Create a show, up to the five-show limit.
+3. Open that show's Studio.
+4. Connect Google Drive using the narrow `drive.file` permission.
+5. The Studio creates/reuses `HRTechify Podcast Studio/<Show>/Episodes/` in the user's Drive.
+6. Name an episode.
+7. Upload audio or record directly with the browser recorder.
+8. Select a literary template.
+9. Optionally select up to three template-owned background-music cues and their intensity/timing.
+10. Save the immutable original source plus `episode-metadata.json` into that show's episode folder.
+11. Continue through audio analysis, user-approved speech edits, mastering and final render as the production pipeline is completed.
+12. Final rendered video retains the mandatory **Podcast Powered by HRTechify** footer.
+
+Deleting a show from Podcast Studio frees an application slot but deliberately leaves the user's existing Google Drive media untouched.
+
+## Google Drive layout
+
+```text
+My Drive/
+└── HRTechify Podcast Studio/
+    ├── Show One/
+    │   └── Episodes/
+    │       ├── Episode One - <id>/
+    │       │   ├── original-<source-file>
+    │       │   └── episode-metadata.json
+    │       └── Episode Two - <id>/
+    └── Show Two/
+        └── Episodes/
+```
+
+## Literary template family
+
+Current built-in concepts:
+
+- Poet's Dawn
+- Midnight Manuscript
+- Wildflower Pages
+- Coffee & Margins
+- Moonlit Verse
+- Ocean Notebook
+
+All share the same safe information hierarchy for Show Name, Episode Name, Host Name, waveform, captions, optional creator logo and mandatory HRTechify credit. The artwork changes; the collision-safe geometry does not.
+
+## Built-in music
+
+The initial music library is defined as original procedural compositions and released under **CC0-1.0**. No third-party commercial audio file is required for the default template library.
+
+Current track identities include Paper Lantern, Quiet Room, Velvet Pages, Open Window, Moon Notes and Ink Ripple. Each template exposes only three of them.
 
 ## Application structure
 
@@ -47,16 +83,14 @@ apps/
   worker/     Cloudflare Worker API
 packages/
   shared/     Product constants and shared types
-  storage/    Provider-neutral storage contracts
-  recorder/   Browser recording contracts
-  audio/      Audio and edit-approval contracts
-  templates/  Template manifest and branding rules
-  renderer/   Final render contracts
-database/     Future D1 migrations
+  storage/    Provider-neutral show/episode storage contracts
+  recorder/   MediaRecorder + IndexedDB browser recording
+  audio/      Speech-edit and template-music contracts/validation
+  templates/  Literary template catalogue and safe-area rules
+  renderer/   Final render snapshot/contracts
+database/     D1 migrations
 tests/        Cross-package and end-to-end tests
 ```
-
-The application skeleton intentionally has **no production database, OAuth provider, storage account or deployment secret connected yet**.
 
 ## Local development
 
@@ -65,15 +99,8 @@ Requirements:
 - Node.js 20 or newer
 - npm
 
-Install dependencies:
-
 ```bash
 npm install
-```
-
-Run the web application:
-
-```bash
 npm run dev:web
 ```
 
@@ -83,24 +110,16 @@ Run the Worker API locally in a second terminal:
 npm run dev:worker
 ```
 
-Type-check all workspaces:
+Validation:
 
 ```bash
 npm run typecheck
-```
-
-Build the web application and validate the Worker:
-
-```bash
 npm run build
 ```
 
-The initial Worker exposes only non-sensitive development routes:
+## Security and storage note
 
-- `GET /api/health`
-- `GET /api/config`
-
-The public config route exposes fixed product rules such as the maximum of five active shows and the mandatory platform credit. It contains no credentials or user data.
+Studio sign-in and Google Drive authorization are deliberately separate. The Drive connector asks for `drive.file`, not unrestricted access to every file in a user's Drive. Browser-recorded chunks are persisted in local IndexedDB during a recording for resilience, then the accepted source is uploaded to the user's selected show folder.
 
 ## Documentation
 
@@ -112,8 +131,9 @@ The public config route exposes fixed product rules such as the maximum of five 
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 - [Roadmap](ROADMAP.md)
-
-Detailed architecture notes are available in [`docs/`](docs/).
+- [Template Specification](docs/template-specification.md)
+- [Recording Flow](docs/recording-flow.md)
+- [Storage Model](docs/storage-model.md)
 
 ## Open source
 
@@ -121,4 +141,4 @@ This repository is intentionally public so developers can inspect the architectu
 
 ## License
 
-Licensed under the Apache License 2.0. HRTechify names, marks and branding remain subject to their respective trademark and brand rights.
+Repository code is licensed under Apache License 2.0. HRTechify names, marks and branding remain subject to their respective trademark and brand rights. Built-in procedural music definitions are separately designated CC0-1.0 in their metadata.

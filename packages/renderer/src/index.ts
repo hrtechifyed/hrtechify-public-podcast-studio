@@ -1,6 +1,7 @@
 import {
   PLATFORM_CREDIT,
   PLATFORM_CREDIT_POSITION,
+  type MusicCue,
 } from "@hrtechify/shared";
 
 export interface RenderSnapshot {
@@ -10,6 +11,8 @@ export interface RenderSnapshot {
   templateId: string;
   templateVersion: number;
   selectedLogoRef?: string;
+  musicPlan: MusicCue[];
+  captionsEnabled: boolean;
 }
 
 export interface FinalRenderRequest {

@@ -2,74 +2,80 @@
 
 ## Principle
 
-Permanent creator media should be stored in the user's selected cloud account rather than in one shared HRTechify media repository.
+Permanent creator media should be stored in the user's own connected cloud storage rather than in one shared HRTechify media repository.
 
-## Initial providers
+Google Drive is the first implemented show-storage path. The provider abstraction remains so additional providers can be added later without changing the show/episode ownership model.
 
-- Google Drive
-- Dropbox
+## Five-show ownership rule
 
-The application should use an internal `StorageProvider` abstraction so future providers can be added without rewriting the production pipeline.
+One account may keep a maximum of **five non-deleted shows**.
 
-Expected provider operations include:
+Archived/hidden state does not create an unlimited way around that product limit. To add a sixth show, the user must delete one existing show from Podcast Studio first.
 
-- connect
-- refreshCredentials
-- ensureWorkspace
-- upload
-- downloadStream
-- writeOutput
-- deleteTemporary
-- getOpenUrl
+Deleting a show from Podcast Studio frees the application slot, but it does **not** silently delete the user's Google Drive folder or previously generated media. Provider-side deletion must always be a separate, explicit action.
 
-## Per-user and per-show structure
+## Google Drive structure
 
-A user may have up to five active shows. Each show gets a separate provider workspace.
-
-Example:
+Every show owns its own Google Drive folder. Episodes for that show are always created under that show's `Episodes` folder.
 
 ```text
-HRTechify Podcast Studio/
-  Show One/
-    Brand Assets/
-    Templates/
-    Episodes/
-  Show Two/
-    Brand Assets/
-    Templates/
-    Episodes/
+My Drive/
+└── HRTechify Podcast Studio/
+    ├── Show One/
+    │   └── Episodes/
+    │       ├── Episode One - a1b2c3d4/
+    │       │   ├── original-recording.webm
+    │       │   └── episode-metadata.json
+    │       └── Episode Two - e5f6g7h8/
+    │           ├── original-upload.wav
+    │           └── episode-metadata.json
+    └── Show Two/
+        └── Episodes/
+            └── ...
 ```
 
-Each episode may contain:
+The application marks folders with Drive `appProperties` containing internal Show/Episode IDs so reconnecting can recover the correct workspace without relying only on folder names.
 
-```text
-Episode 001/
-  original-recording.webm
-  podcast-master.mp3
-  final-video.mp4
-  captions.vtt
-```
+## Episode ownership
 
-## Storage connection model
+Every episode row contains one `show_id`. The API validates that the authenticated user owns that show before listing or creating episodes.
 
-A user may connect one or more supported providers. Each show stores an active storage-connection reference so different shows may use different destinations.
+A new episode is not accepted by the application database until the show has a Google Drive workspace and the episode has a Drive folder ID.
 
-Example:
+The original audio file can originate from:
 
-- Show 1 → Google Drive
-- Show 2 → Dropbox
-- Show 3 → Google Drive
+- an uploaded audio file; or
+- a browser recording created inside Podcast Studio.
 
-The user should not need to reconnect the same provider for every show unless provider authorization requires it.
+In both cases, the accepted source is written to Drive as a new immutable original file. Later cleanup, edits, mastering and rendering must create derived files rather than overwrite it.
+
+## Episode metadata file
+
+The Studio also writes `episode-metadata.json` into the episode folder. It records the episode/show identity, original source reference, selected template version, music plan and platform-credit rule. This makes the user's Drive folder understandable even independently of the application UI.
+
+## Google authorization
+
+Studio account authentication and Google Drive authorization are intentionally separate.
+
+The browser asks for the narrow Google Drive `drive.file` scope only when the user connects Drive. The returned access token is intended to remain in the current page session rather than being stored in the public repository or ordinary browser persistence.
+
+`drive.file` lets the app work with files/folders it creates or the user explicitly opens with the app. It is not a request for unrestricted access to every file in the user's Drive.
+
+## Provider abstraction
+
+The internal `StorageProvider` contract still models:
+
+- `ensureShowWorkspace`
+- `ensureEpisodeWorkspace`
+- `writeOutput`
+- `getOpenUrl`
+
+Future Dropbox or other implementations must preserve the same tenant/show/episode isolation guarantees.
 
 ## File ownership
 
-The platform stores provider file IDs, paths, checksums and open URLs as metadata where needed. User-owned files remain in the user's provider account.
+The platform database stores provider file/folder IDs and metadata needed to reconnect the application experience. User-owned media remains in the user's cloud account.
 
 ## Original recording rule
 
-The original source file is never overwritten. Derived audio/video outputs are written as new files.
-
-## Provider access
-
-Provider integrations should use the minimum permissions required. Broad storage access should not be requested unless a future feature genuinely needs it and the user receives clear consent information.
+The original source file is never overwritten. Derived audio/video outputs are always new files.

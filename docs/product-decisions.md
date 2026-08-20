@@ -1,36 +1,59 @@
-# Initial Product Decisions
+# Product Decisions
 
-This file records the initial product decisions agreed before implementation begins.
+This file records current product decisions that implementation must preserve.
 
 ## Repository and product boundaries
 
-- This repository is a completely new public project.
-- It may reproduce the functioning of the existing HRTechify podcast studio, but it must not modify, redeploy or create a production dependency on that repository.
-- The Nikita Book Review Studio repository is also out of scope and must not be modified.
+- This repository is a completely independent public project.
+- It may reproduce proven podcast-studio workflow ideas, but it must not modify, redeploy or create a production dependency on the private HRTechify podcast repository.
+- The Nikita Book Review Studio repository is out of scope.
 
-## Account model
+## Account and show model
 
-- One user account may have up to **5 active shows**.
-- Each show has independent branding, episodes, template preference and storage destination.
-- A deleted or archived show may free capacity for another active show after lifecycle handling is complete.
+- One user account may keep a maximum of **5 non-deleted shows total**.
+- Each show has independent identity, episodes, template preferences and Google Drive workspace.
+- Archived/hidden state does not create extra show capacity.
+- If the user reaches five shows, the product must explain the limit and ask the user to delete one show before creating another.
+- Deleting a show from Podcast Studio frees a slot but does not silently remove the user's Google Drive media.
 
-## Storage model
+## Episode storage model
 
-- Users choose where permanent media is stored.
-- Initial providers: Google Drive and Dropbox.
-- A user may connect providers at account level and choose an active destination per show.
+- Google Drive is the first implemented permanent-media provider.
+- Each show owns its own Drive folder.
+- Every episode for that show must be stored under that show's `Episodes` folder.
+- Every episode receives its own folder.
+- The original source recording is stored there as a new immutable file.
+- `episode-metadata.json` accompanies the source so the Drive copy retains show/episode/template/music context.
+- Future storage providers must preserve the same show/episode ownership hierarchy.
 
 ## Recording
 
-- Users may record audio directly in the browser or upload an existing recording.
-- Browser recording must support pause/resume, preview and recovery-oriented chunk persistence.
+- Users may upload an existing audio file **or record directly in the browser**.
+- Browser recording supports microphone permission, device choice, pause/resume, stop, playback and record-again.
+- Long recording reliability uses MediaRecorder chunks plus IndexedDB persistence rather than relying on one giant in-memory Blob.
+- The accepted browser recording becomes an original source and is never overwritten by later processing.
 
-## Branding
+## Template visual direction
 
-- Users may upload their own show logo and profile picture.
-- The studio asks before removing a logo background.
-- The original logo is preserved and the user chooses original or transparent variant.
-- Show Name, Episode Name and Host Name are rendered from a locked pre-render snapshot.
+- Built-in templates must feel creative, literary and editorial rather than formal/corporate.
+- Rendered template artwork must not use formal boxes or dashboard-like information panels.
+- Readable cursive/script fonts are encouraged for show/host accents, paired with highly readable episode typography.
+- Creator profile photographs are **never rendered in templates**.
+- Creator logo remains an optional supported asset.
+- Show Name, Episode Name and Host Name use consistent safe positioning across built-in templates.
+- Closed captions have a fixed lower safe zone and must not clash with creator text, logo or platform credit.
+
+## Background music
+
+- Each built-in template exposes exactly three compatible background-music choices.
+- Built-in music is created as HRTechify procedural originals and released under **CC0-1.0** so no third-party copyrighted music is required by the default product.
+- Music is optional.
+- A user may select up to **3 different tracks** for an episode.
+- Each cue can be `very-subtle`, `subtle` or `moderately-subtle`.
+- A cue can run `throughout` or during one explicit interval.
+- If one cue runs throughout, it is the only cue.
+- Multiple interval cues cannot overlap.
+- Music must remain secondary to the spoken narration.
 
 ## Platform attribution
 

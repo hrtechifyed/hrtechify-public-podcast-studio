@@ -9,7 +9,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@hrtechify/audio": "0.1.0",
+    "@hrtechify/recorder": "0.1.0",
     "@hrtechify/shared": "0.1.0",
+    "@hrtechify/templates": "0.1.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

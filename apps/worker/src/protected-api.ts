@@ -1,13 +1,18 @@
-import { MAX_ACTIVE_SHOWS_PER_USER } from "@hrtechify/shared";
+import { MAX_SHOWS_PER_USER } from "@hrtechify/shared";
 import { AuthenticationError, requireVerifiedIdentity } from "./auth";
 import { requireDatabase, type WorkerEnv } from "./db";
 import {
-  archiveShowForUser,
-  countActiveShowsForUser,
+  createEpisodeForShow,
+  listEpisodesForShow,
+  serializeEpisode,
+} from "./episodes";
+import {
+  countShowsForUser,
   createShowForUser,
+  deleteShowForUser,
   getShowForUser,
   listShowsForUser,
-  restoreShowForUser,
+  saveGoogleDriveWorkspaceForShow,
   ShowLimitError,
   updateShowForUser,
 } from "./shows";
@@ -39,6 +44,8 @@ const serializeShow = (show: Awaited<ReturnType<typeof getShowForUser>>) => {
     description: show.description,
     status: show.status,
     storageConnectionId: show.storage_connection_id,
+    driveShowFolderId: show.drive_show_folder_id,
+    driveEpisodesFolderId: show.drive_episodes_folder_id,
     createdAt: show.created_at,
     updatedAt: show.updated_at,
   };
@@ -74,17 +81,17 @@ export const handleProtectedApi = async (
     }
 
     if (url.pathname === "/api/shows" && request.method === "GET") {
-      const [shows, activeCount] = await Promise.all([
+      const [shows, used] = await Promise.all([
         listShowsForUser(db, identity.userId),
-        countActiveShowsForUser(db, identity.userId),
+        countShowsForUser(db, identity.userId),
       ]);
 
       return json({
         shows: shows.map((show) => serializeShow(show)),
         limits: {
-          active: activeCount,
-          maximum: MAX_ACTIVE_SHOWS_PER_USER,
-          canCreate: activeCount < MAX_ACTIVE_SHOWS_PER_USER,
+          used,
+          maximum: MAX_SHOWS_PER_USER,
+          canCreate: used < MAX_SHOWS_PER_USER,
         },
       });
     }
@@ -99,18 +106,59 @@ export const handleProtectedApi = async (
       return json({ show: serializeShow(show) }, 201);
     }
 
-    const match = url.pathname.match(/^\/api\/shows\/([^/]+)(?:\/(archive|restore))?$/);
-    if (match) {
-      const showId = decodeURIComponent(match[1]);
-      const action = match[2];
+    const episodesMatch = url.pathname.match(/^\/api\/shows\/([^/]+)\/episodes$/);
+    if (episodesMatch) {
+      const showId = decodeURIComponent(episodesMatch[1]);
+      if (request.method === "GET") {
+        const episodes = await listEpisodesForShow(db, identity.userId, showId);
+        if (!episodes) return json({ error: "show_not_found" }, 404);
+        return json({ episodes: episodes.map(serializeEpisode) });
+      }
+      if (request.method === "POST") {
+        const body = await parseBody(request);
+        const episode = await createEpisodeForShow(db, identity.userId, showId, {
+          id: typeof body.id === "string" ? body.id : undefined,
+          title: String(body.title ?? ""),
+          sourceKind: String(body.sourceKind ?? "") as "upload" | "recording",
+          sourceFileId: String(body.sourceFileId ?? ""),
+          sourceFileName: String(body.sourceFileName ?? ""),
+          sourceMimeType: typeof body.sourceMimeType === "string" ? body.sourceMimeType : undefined,
+          sourceSizeBytes: typeof body.sourceSizeBytes === "number" ? body.sourceSizeBytes : undefined,
+          driveEpisodeFolderId: String(body.driveEpisodeFolderId ?? ""),
+          templateId: String(body.templateId ?? ""),
+          templateVersion: typeof body.templateVersion === "number" ? body.templateVersion : undefined,
+          musicPlan: Array.isArray(body.musicPlan) ? body.musicPlan as never[] : [],
+        });
+        return json({ episode: serializeEpisode(episode) }, 201);
+      }
+    }
 
-      if (!action && request.method === "GET") {
+    const driveMatch = url.pathname.match(/^\/api\/shows\/([^/]+)\/storage\/google-drive$/);
+    if (driveMatch && request.method === "PUT") {
+      const showId = decodeURIComponent(driveMatch[1]);
+      const body = await parseBody(request);
+      const show = await saveGoogleDriveWorkspaceForShow(
+        db,
+        identity.userId,
+        showId,
+        String(body.showFolderId ?? ""),
+        String(body.episodesFolderId ?? ""),
+      );
+      if (!show) return json({ error: "show_not_found" }, 404);
+      return json({ show: serializeShow(show) });
+    }
+
+    const showMatch = url.pathname.match(/^\/api\/shows\/([^/]+)$/);
+    if (showMatch) {
+      const showId = decodeURIComponent(showMatch[1]);
+
+      if (request.method === "GET") {
         const show = await getShowForUser(db, identity.userId, showId);
         if (!show) return json({ error: "show_not_found" }, 404);
         return json({ show: serializeShow(show) });
       }
 
-      if (!action && (request.method === "PUT" || request.method === "PATCH")) {
+      if (request.method === "PUT" || request.method === "PATCH") {
         const body = await parseBody(request);
         const show = await updateShowForUser(db, identity.userId, showId, {
           name: String(body.name ?? ""),
@@ -121,16 +169,14 @@ export const handleProtectedApi = async (
         return json({ show: serializeShow(show) });
       }
 
-      if (action === "archive" && request.method === "POST") {
-        const archived = await archiveShowForUser(db, identity.userId, showId);
-        if (!archived) return json({ error: "show_not_found" }, 404);
-        return json({ ok: true });
-      }
-
-      if (action === "restore" && request.method === "POST") {
-        const show = await restoreShowForUser(db, identity.userId, showId);
-        if (!show) return json({ error: "show_not_found" }, 404);
-        return json({ show: serializeShow(show) });
+      if (request.method === "DELETE") {
+        const deleted = await deleteShowForUser(db, identity.userId, showId);
+        if (!deleted) return json({ error: "show_not_found" }, 404);
+        return json({
+          ok: true,
+          driveFilesDeleted: false,
+          message: "The show was removed from the studio. Its Google Drive folder was left untouched.",
+        });
       }
     }
 
@@ -146,24 +192,28 @@ export const handleProtectedApi = async (
     if (error instanceof ShowLimitError) {
       return json(
         {
-          error: "active_show_limit_reached",
-          maximum: MAX_ACTIVE_SHOWS_PER_USER,
+          error: "show_limit_reached",
+          maximum: MAX_SHOWS_PER_USER,
+          message: `You can create up to ${MAX_SHOWS_PER_USER} shows. Delete an existing show before adding another.`,
         },
         409,
       );
     }
 
     if (error instanceof Error) {
-      if (error.message === "d1_not_configured") {
-        return json({ error: "d1_not_configured" }, 503);
-      }
-      if (error.message === "invalid_json") {
-        return json({ error: "invalid_json" }, 400);
-      }
-      if (error.message === "authenticated_user_not_found") {
-        return json({ error: "authentication_required" }, 401);
-      }
-      if (error.message.endsWith("_required") || error.message.endsWith("_too_long")) {
+      if (error.message === "d1_not_configured") return json({ error: "d1_not_configured" }, 503);
+      if (error.message === "invalid_json") return json({ error: "invalid_json" }, 400);
+      if (error.message === "authenticated_user_not_found") return json({ error: "authentication_required" }, 401);
+      if (error.message === "show_not_found") return json({ error: "show_not_found" }, 404);
+      if (
+        error.message.endsWith("_required") ||
+        error.message.endsWith("_too_long") ||
+        error.message.endsWith("_invalid") ||
+        error.message.startsWith("music_") ||
+        error.message === "template_not_found" ||
+        error.message === "google_drive_workspace_required" ||
+        error.message === "throughout_music_must_be_the_only_cue"
+      ) {
         return json({ error: error.message }, 400);
       }
     }
