@@ -1,5 +1,5 @@
 export const MAX_ACTIVE_SHOWS_PER_USER = 5 as const;
-export const PLATFORM_CREDIT = "Podcast Powered by HRTechify" as const;
+export const PLATFORM_CREDIT = "Powered by HRTechify" as const;
 export const PLATFORM_CREDIT_POSITION = "bottom-right" as const;
 
 export type StorageProviderName = "google-drive" | "dropbox";

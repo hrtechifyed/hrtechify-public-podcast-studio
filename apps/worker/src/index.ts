@@ -6,6 +6,7 @@ import {
 import type { WorkerEnv } from "./db";
 import { handleAuthApi } from "./auth-api";
 import { handleProtectedApi } from "./protected-api";
+import { handleStorageApi } from "./storage-api";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body, null, 2), {
@@ -37,6 +38,9 @@ export default {
 
     const authResponse = await handleAuthApi(request, url, env);
     if (authResponse) return authResponse;
+
+    const storageResponse = await handleStorageApi(request, url, env);
+    if (storageResponse) return storageResponse;
 
     const protectedResponse = await handleProtectedApi(request, url, env);
     if (protectedResponse) return protectedResponse;

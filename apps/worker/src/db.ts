@@ -27,6 +27,9 @@ export interface WorkerEnv {
   SESSION_SIGNING_KEY?: string;
   GOOGLE_AUTH_CLIENT_ID?: string;
   GOOGLE_AUTH_CLIENT_SECRET?: string;
+  GOOGLE_DRIVE_CLIENT_ID?: string;
+  GOOGLE_DRIVE_CLIENT_SECRET?: string;
+  TOKEN_ENCRYPTION_KEY?: string;
   RESEND_API_KEY?: string;
   AUTH_EMAIL_FROM?: string;
   APP_URL?: string;

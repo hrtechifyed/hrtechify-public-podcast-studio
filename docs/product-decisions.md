@@ -36,7 +36,7 @@ This file records the initial product decisions agreed before implementation beg
 
 Every generated podcast video must visibly show:
 
-**Podcast Powered by HRTechify**
+**Powered by HRTechify**
 
 The credit must be in the bottom-right corner, remain visible on all approved templates and be enforced by the renderer rather than left to user template configuration.
 
