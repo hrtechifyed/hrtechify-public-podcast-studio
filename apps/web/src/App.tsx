@@ -3,6 +3,7 @@ import {
   MAX_ACTIVE_SHOWS_PER_USER,
   PLATFORM_CREDIT,
 } from "@hrtechify/shared";
+import { ShowBrandingPanel } from "./ShowBrandingPanel";
 
 interface Account {
   id: string;
@@ -755,6 +756,16 @@ export function App() {
                     ))}
                   </div>
                 )}
+
+                {assignedConnection?.provider === "google-drive" &&
+                  assignedConnection.status === "active" &&
+                  show.storageConnectionId && (
+                    <ShowBrandingPanel
+                      showId={show.id}
+                      showName={show.name}
+                      connectionId={show.storageConnectionId}
+                    />
+                  )}
 
                 <div className="show-card-actions">
                   <button type="button" className="secondary-action compact" onClick={() => openEditShow(show)} disabled={busy || showStorageBusy}>Edit</button>
