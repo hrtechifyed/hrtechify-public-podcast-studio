@@ -26,7 +26,7 @@ test("Dropbox uses PKCE offline OAuth with least-privilege App Folder file scope
 });
 
 test("Dropbox recording uploads are resumable and register immutable originals", () => {
-  assert.match(dropboxFileApi, /storage_upload_sessions/);
+  assert.match(dropboxFileApi, /createStorageUploadSession/);
   assert.match(dropboxFileApi, /startDropboxResumableSession/);
   assert.match(dropboxFileApi, /uploadDropboxResumableChunk/);
   assert.match(dropboxFileApi, /assetKind: "original-recording"/);
@@ -40,8 +40,9 @@ test("existing recorder URLs transparently dispatch Dropbox without exposing pro
   assert.match(compatApi, /connection\?\.provider !== "dropbox"/);
   assert.match(compatApi, /dropbox-browser-upload:/);
   assert.match(compatApi, /decryptStorageToken/);
-  assert.match(index, /handleStorageUploadCompatApi/);
-  assert.ok(index.indexOf("handleStorageUploadCompatApi") < index.indexOf("handleDriveFileApi"));
+  const handlerSection = index.slice(index.indexOf("const handlers = ["));
+  assert.ok(handlerSection.indexOf("handleStorageUploadCompatApi") >= 0);
+  assert.ok(handlerSection.indexOf("handleStorageUploadCompatApi") < handlerSection.indexOf("handleDriveFileApi"));
 });
 
 test("provider-neutral storage keeps ownership checks server-side", () => {
@@ -56,18 +57,18 @@ test("self-service account deletion preserves remote files", () => {
   assert.match(privacyApi, /preserveStorageFiles/);
   assert.match(privacyApi, /storageFilesPreserved/);
   assert.doesNotMatch(privacyApi, /delete.*GoogleDrive|delete.*Dropbox/i);
-  assert.match(privacyPage, /Google Drive and Dropbox files are preserved/);
+  assert.match(privacyPage, /does not call Google Drive or Dropbox deletion APIs/);
 });
 
 test("request security is wired at the Worker boundary", () => {
   assert.match(index, /enforceRequestSecurity\(request, env\)/);
   assert.match(index, /applySecurityHeaders\(response, request\)/);
-  assert.match(security, /Content-Security-Policy/i);
-  assert.match(security, /Strict-Transport-Security/i);
-  assert.match(security, /X-Frame-Options/i);
-  assert.match(security, /X-Content-Type-Options/i);
-  assert.match(security, /Permissions-Policy/i);
-  assert.match(security, /Sec-Fetch-Site/i);
+  assert.match(security, /content-security-policy/i);
+  assert.match(security, /strict-transport-security/i);
+  assert.match(security, /x-frame-options/i);
+  assert.match(security, /x-content-type-options/i);
+  assert.match(security, /permissions-policy/i);
+  assert.match(security, /sec-fetch-site/i);
 });
 
 test("password schema readiness uses the exact migration table names", () => {
