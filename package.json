@@ -1,0 +1,22 @@
+{
+  "name": "hrtechify-public-podcast-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open-source, privacy-first multi-user podcast studio by HRTechify.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace @hrtechify/web",
+    "dev:worker": "npm run dev --workspace @hrtechify/worker",
+    "build": "npm run build --workspace @hrtechify/web && npm run typecheck --workspace @hrtechify/worker",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}
