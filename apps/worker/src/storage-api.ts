@@ -7,11 +7,20 @@ import {
   sha256Base64Url,
 } from "./auth-utils";
 import { requireDatabase, type WorkerEnv } from "./db";
+import { createGoogleDriveSession, GoogleDriveError } from "./google-drive";
+import {
+  getShowForUser,
+  listShowsForUser,
+  setShowStorageConnectionForUser,
+} from "./shows";
 import {
   consumeStorageOAuthState,
+  getStorageConnectionForUser,
   listStorageConnectionsForUser,
+  markStorageConnectionUsed,
   purgeExpiredStorageOAuthStates,
   saveStorageOAuthState,
+  type StorageConnectionRow,
   upsertStorageConnection,
 } from "./storage-store";
 import { encryptStorageToken } from "./token-crypto";
@@ -33,6 +42,14 @@ const redirect = (location: string) =>
     status: 302,
     headers: { location, "cache-control": "no-store" },
   });
+
+const parseBody = async (request: Request) => {
+  try {
+    return (await request.json()) as Record<string, unknown>;
+  } catch {
+    throw new Error("invalid_json");
+  }
+};
 
 const appDestination = (request: Request, env: WorkerEnv, returnTo = "/") => {
   const origin = env.APP_URL?.trim() || new URL(request.url).origin;
@@ -84,9 +101,25 @@ const serializeConnection = (
   accountEmail: connection.provider_account_email,
   status: connection.status,
   scopes: connection.scopes.split(" ").filter(Boolean),
+  lastUsedAt: connection.last_used_at,
   createdAt: connection.created_at,
   updatedAt: connection.updated_at,
 });
+
+const requireActiveGoogleDriveConnection = async (
+  db: ReturnType<typeof requireDatabase>,
+  userId: string,
+  connectionId: string,
+): Promise<StorageConnectionRow> => {
+  const connection = await getStorageConnectionForUser(db, userId, connectionId);
+  if (!connection || connection.provider !== "google-drive") {
+    throw new GoogleDriveError("google_drive_connection_not_found", 404);
+  }
+  if (connection.status !== "active") {
+    throw new GoogleDriveError("google_drive_connection_inactive", 409);
+  }
+  return connection;
+};
 
 const startGoogleDrive = async (
   request: Request,
@@ -101,7 +134,7 @@ const startGoogleDrive = async (
   const requestUrl = new URL(request.url);
   const returnTo = safeReturnTo(requestUrl.searchParams.get("returnTo"));
   const state = randomToken(32);
-  const stateHash = await sha256Base64Url(state);
+  const stateHash = await sha256BaseUrl(state);
   const verifier = randomToken(64);
   const challenge = await pkceChallenge(verifier);
 
@@ -218,6 +251,90 @@ const finishGoogleDrive = async (
   return redirect(storageDestination(request, env, transaction.return_to, "connected"));
 };
 
+const provisionShowWorkspace = async (
+  env: WorkerEnv,
+  userId: string,
+  showId: string,
+  connectionId: string,
+) => {
+  const db = requireDatabase(env);
+  const [show, connection] = await Promise.all([
+    getShowForUser(db, userId, showId),
+    requireActiveGoogleDriveConnection(db, userId, connectionId),
+  ]);
+  if (!show) throw new GoogleDriveError("show_not_found", 404);
+
+  const session = await createGoogleDriveSession(env, userId, connection);
+  const workspace = await session.ensureShowWorkspace(show.id, show.name);
+  await setShowStorageConnectionForUser(db, userId, show.id, connection.id);
+  await markStorageConnectionUsed(db, userId, connection.id);
+
+  return {
+    showId: show.id,
+    connectionId: connection.id,
+    provider: "google-drive" as const,
+    accountEmail: connection.provider_account_email,
+    ...workspace,
+  };
+};
+
+const provisionActiveShowWorkspaces = async (
+  request: Request,
+  env: WorkerEnv,
+  userId: string,
+) => {
+  const db = requireDatabase(env);
+  const body = await parseBody(request);
+  const requestedConnectionId = typeof body.connectionId === "string" ? body.connectionId : null;
+  const replaceExisting = body.replaceExisting === true;
+
+  const connections = (await listStorageConnectionsForUser(db, userId)).filter(
+    (connection) => connection.provider === "google-drive" && connection.status === "active",
+  );
+  if (connections.length === 0) {
+    throw new GoogleDriveError("google_drive_connection_not_found", 404);
+  }
+
+  let connection: StorageConnectionRow;
+  if (requestedConnectionId) {
+    connection = await requireActiveGoogleDriveConnection(db, userId, requestedConnectionId);
+  } else if (connections.length === 1) {
+    connection = connections[0];
+  } else {
+    throw new GoogleDriveError("google_drive_connection_selection_required", 409);
+  }
+
+  const shows = (await listShowsForUser(db, userId)).filter(
+    (show) =>
+      show.status === "active" &&
+      (replaceExisting || !show.storage_connection_id || show.storage_connection_id === connection.id),
+  );
+
+  const session = await createGoogleDriveSession(env, userId, connection);
+  const provisioned = [];
+  const skipped = [];
+
+  for (const show of shows) {
+    if (!replaceExisting && show.storage_connection_id && show.storage_connection_id !== connection.id) {
+      skipped.push({ showId: show.id, reason: "different_storage_connection" });
+      continue;
+    }
+
+    const workspace = await session.ensureShowWorkspace(show.id, show.name);
+    await setShowStorageConnectionForUser(db, userId, show.id, connection.id);
+    provisioned.push({
+      showId: show.id,
+      connectionId: connection.id,
+      provider: "google-drive" as const,
+      accountEmail: connection.provider_account_email,
+      ...workspace,
+    });
+  }
+
+  await markStorageConnectionUsed(db, userId, connection.id);
+  return { connection: serializeConnection(connection), provisioned, skipped };
+};
+
 export const handleStorageApi = async (
   request: Request,
   url: URL,
@@ -248,6 +365,23 @@ export const handleStorageApi = async (
       return finishGoogleDrive(request, env, identity.userId);
     }
 
+    if (url.pathname === "/api/storage/google-drive/provision" && request.method === "POST") {
+      const body = await parseBody(request);
+      const showId = typeof body.showId === "string" ? body.showId : "";
+      const connectionId = typeof body.connectionId === "string" ? body.connectionId : "";
+      if (!showId) return json({ error: "show_id_required" }, 400);
+      if (!connectionId) return json({ error: "storage_connection_id_required" }, 400);
+      const workspace = await provisionShowWorkspace(env, identity.userId, showId, connectionId);
+      return json({ workspace });
+    }
+
+    if (
+      url.pathname === "/api/storage/google-drive/provision-active-shows" &&
+      request.method === "POST"
+    ) {
+      return json(await provisionActiveShowWorkspaces(request, env, identity.userId));
+    }
+
     return json({ error: "method_not_allowed" }, 405);
   } catch (error) {
     if (error instanceof AuthenticationError) {
@@ -257,8 +391,17 @@ export const handleStorageApi = async (
       return json({ error: error.code }, 401);
     }
 
-    if (error instanceof Error && error.message === "d1_not_configured") {
-      return json({ error: "d1_not_configured" }, 503);
+    if (error instanceof GoogleDriveError) {
+      return json({ error: error.code }, error.status);
+    }
+
+    if (error instanceof Error) {
+      if (error.message === "d1_not_configured") {
+        return json({ error: "d1_not_configured" }, 503);
+      }
+      if (error.message === "invalid_json") {
+        return json({ error: "invalid_json" }, 400);
+      }
     }
 
     return json({ error: "internal_error" }, 500);
