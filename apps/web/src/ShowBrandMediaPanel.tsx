@@ -1,4 +1,5 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { EpisodeList } from "./EpisodeList";
 import { RecorderPanel } from "./RecorderPanel";
 
 type BrandMediaKind = "show-intro-original" | "show-outro-original";
@@ -221,6 +222,7 @@ export function ShowBrandMediaPanel({ showId, showName, connectionId }: ShowBran
       </section>
 
       <RecorderPanel showId={showId} showName={showName} connectionId={connectionId} />
+      <EpisodeList showId={showId} showName={showName} />
     </>
   );
 }
