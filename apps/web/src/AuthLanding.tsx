@@ -49,6 +49,7 @@ export function AuthLanding() {
     void fetch("/api/auth/config", { credentials: "same-origin" })
       .then(async (response) => {
         if (response.ok) setConfig(await response.json() as AuthConfig);
+        else setError("The sign-in service is not configured for this deployment yet.");
       })
       .catch(() => setError("The sign-in service could not be reached."));
   }, []);
@@ -114,11 +115,13 @@ export function AuthLanding() {
     }
   };
 
-  const passwordEnabled = mode === "signup"
-    ? config?.providers.password?.signup !== false
-    : mode === "signin"
-      ? config?.providers.password?.signin !== false
-      : config?.providers.password?.recovery !== false;
+  const passwordEnabled = Boolean(config && (
+    mode === "signup"
+      ? config.providers.password?.signup
+      : mode === "signin"
+        ? config.providers.password?.signin
+        : config.providers.password?.recovery
+  ));
 
   return (
     <div className="public-shell">
@@ -167,7 +170,7 @@ export function AuthLanding() {
 
           {mode !== "forgot" && (
             <>
-              <button type="button" className="google-button" onClick={google} disabled={busy || config?.providers.google === false}>
+              <button type="button" className="google-button" onClick={google} disabled={busy || config?.providers.google !== true}>
                 Continue with Google
               </button>
               <p className="setup-hint">Google sign-in: verified email identity only. No Gmail, Contacts, Calendar or broad Drive access.</p>
@@ -216,6 +219,17 @@ export function AuthLanding() {
           <p className="signin-footnote">By continuing, you can review how account, media and Google permissions are handled in <a href="/privacy">Privacy</a>.</p>
         </section>
       </main>
+
+      <section className="show-form-card" style={{ margin: "0 auto 28px", width: "min(1120px, calc(100% - 32px))" }} aria-labelledby="privacy-at-a-glance-title">
+        <div className="form-heading">
+          <div>
+            <p className="eyebrow">Privacy at a glance</p>
+            <h2 id="privacy-at-a-glance-title">Narrow permissions, user-owned media.</h2>
+            <p className="muted">Google Sign-In uses <code>openid email</code> only. Google Drive is optional and connected separately with <code>drive.file</code>. HRTechify does not request Gmail, Contacts, Calendar, <code>drive</code>, or <code>drive.readonly</code> access.</p>
+          </div>
+          <a className="secondary-action compact" href="/privacy">Open full Privacy section</a>
+        </div>
+      </section>
 
       <footer style={{ justifyContent: "flex-end" }}><span>{PLATFORM_CREDIT}</span></footer>
     </div>
