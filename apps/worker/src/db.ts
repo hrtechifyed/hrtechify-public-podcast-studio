@@ -22,8 +22,22 @@ export interface D1DatabaseLike {
   prepare(query: string): D1PreparedStatementLike;
 }
 
+export interface ImagesOutputLike {
+  response(): Response;
+}
+
+export interface ImagesTransformLike {
+  transform(options: Record<string, unknown>): ImagesTransformLike;
+  output(options: { format: string }): Promise<ImagesOutputLike>;
+}
+
+export interface ImagesBindingLike {
+  input(source: ReadableStream<Uint8Array> | ArrayBuffer | Uint8Array): ImagesTransformLike;
+}
+
 export interface WorkerEnv {
   DB?: D1DatabaseLike;
+  IMAGES?: ImagesBindingLike;
   SESSION_SIGNING_KEY?: string;
   GOOGLE_AUTH_CLIENT_ID?: string;
   GOOGLE_AUTH_CLIENT_SECRET?: string;
