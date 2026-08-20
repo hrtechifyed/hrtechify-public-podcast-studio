@@ -58,6 +58,21 @@ const openDatabase = () =>
     request.onerror = () => reject(request.error ?? new Error("indexeddb_open_failed"));
   });
 
+const getRecordingSession = async (database: IDBDatabase, sessionId: string) => {
+  const transaction = database.transaction(SESSION_STORE, "readonly");
+  const session = await requestResult(transaction.objectStore(SESSION_STORE).get(sessionId)) as PersistedRecordingSession | undefined;
+  await transactionDone(transaction);
+  return session;
+};
+
+const getChunkKeys = async (database: IDBDatabase, sessionId: string) => {
+  const transaction = database.transaction(CHUNK_STORE, "readonly");
+  const index = transaction.objectStore(CHUNK_STORE).index("sessionId");
+  const keys = await requestResult(index.getAllKeys(sessionId));
+  await transactionDone(transaction);
+  return keys;
+};
+
 export const createRecordingSessionId = () => crypto.randomUUID();
 
 export const chooseRecordingMimeType = () => {
@@ -116,19 +131,18 @@ export const appendRecordingChunk = async (
   if (blob.size === 0) return;
   const database = await openDatabase();
   try {
-    const transaction = database.transaction([SESSION_STORE, CHUNK_STORE], "readwrite");
-    const sessions = transaction.objectStore(SESSION_STORE);
-    const chunks = transaction.objectStore(CHUNK_STORE);
-    const session = await requestResult(sessions.get(sessionId)) as PersistedRecordingSession | undefined;
+    const session = await getRecordingSession(database, sessionId);
     if (!session) throw new Error("recording_session_not_found");
+
     const chunk: PersistedRecordingChunk = {
       key: `${sessionId}:${String(index).padStart(10, "0")}`,
       sessionId,
       index,
       blob,
     };
-    chunks.put(chunk);
-    sessions.put({
+    const transaction = database.transaction([SESSION_STORE, CHUNK_STORE], "readwrite");
+    transaction.objectStore(CHUNK_STORE).put(chunk);
+    transaction.objectStore(SESSION_STORE).put({
       ...session,
       chunkCount: Math.max(session.chunkCount, index + 1),
       updatedAt: new Date().toISOString(),
@@ -145,11 +159,14 @@ export const updateRecordingSessionState = async (
 ) => {
   const database = await openDatabase();
   try {
-    const transaction = database.transaction(SESSION_STORE, "readwrite");
-    const store = transaction.objectStore(SESSION_STORE);
-    const session = await requestResult(store.get(sessionId)) as PersistedRecordingSession | undefined;
+    const session = await getRecordingSession(database, sessionId);
     if (!session) throw new Error("recording_session_not_found");
-    store.put({ ...session, state, updatedAt: new Date().toISOString() });
+    const transaction = database.transaction(SESSION_STORE, "readwrite");
+    transaction.objectStore(SESSION_STORE).put({
+      ...session,
+      state,
+      updatedAt: new Date().toISOString(),
+    });
     await transactionDone(transaction);
   } finally {
     database.close();
@@ -189,11 +206,10 @@ export const rebuildRecordingBlob = async (sessionId: string, mimeType: string) 
 export const deleteRecordingSession = async (sessionId: string) => {
   const database = await openDatabase();
   try {
+    const keys = await getChunkKeys(database, sessionId);
     const transaction = database.transaction([SESSION_STORE, CHUNK_STORE], "readwrite");
     transaction.objectStore(SESSION_STORE).delete(sessionId);
     const chunkStore = transaction.objectStore(CHUNK_STORE);
-    const index = chunkStore.index("sessionId");
-    const keys = await requestResult(index.getAllKeys(sessionId));
     for (const key of keys) chunkStore.delete(key);
     await transactionDone(transaction);
   } finally {
