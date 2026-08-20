@@ -1,4 +1,5 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { RecorderPanel } from "./RecorderPanel";
 
 type BrandMediaKind = "show-intro-original" | "show-outro-original";
 
@@ -22,6 +23,7 @@ interface ShowBrandMediaPanelProps {
 
 const MAX_BYTES = 500 * 1024 * 1024;
 const CHUNK_BYTES = 8 * 1024 * 1024;
+const MAX_RECOVERY_ATTEMPTS = 3;
 const SUPPORTED_TYPES = new Set([
   "audio/mpeg",
   "audio/wav",
@@ -109,6 +111,7 @@ export function ShowBrandMediaPanel({ showId, showName, connectionId }: ShowBran
 
     const uploadToken = startPayload.uploadToken;
     let offset = startPayload.nextOffset ?? 0;
+    let recoveryAttempts = 0;
     while (offset < file.size) {
       const endExclusive = Math.min(offset + CHUNK_BYTES, file.size);
       const chunk = file.slice(offset, endExclusive, file.type);
@@ -125,6 +128,8 @@ export function ShowBrandMediaPanel({ showId, showName, connectionId }: ShowBran
           body: chunk,
         });
       } catch {
+        if (recoveryAttempts >= MAX_RECOVERY_ATTEMPTS) throw new Error("The intro/outro upload was interrupted repeatedly. Choose the file again to retry safely.");
+        recoveryAttempts += 1;
         offset = await queryResumeOffset(uploadToken);
         setProgress(Math.floor((offset / file.size) * 100));
         continue;
@@ -132,13 +137,15 @@ export function ShowBrandMediaPanel({ showId, showName, connectionId }: ShowBran
 
       const payload = await response.json().catch(() => null) as { complete?: boolean; nextOffset?: number | null; error?: string } | null;
       if (!response.ok) {
-        if (response.status >= 500 || response.status === 429) {
+        if ((response.status >= 500 || response.status === 429) && recoveryAttempts < MAX_RECOVERY_ATTEMPTS) {
+          recoveryAttempts += 1;
           offset = await queryResumeOffset(uploadToken);
           setProgress(Math.floor((offset / file.size) * 100));
           continue;
         }
         throw new Error(friendlyError(payload?.error));
       }
+      recoveryAttempts = 0;
       offset = payload?.nextOffset ?? endExclusive;
       setProgress(Math.min(100, Math.floor((offset / file.size) * 100)));
       if (payload?.complete) break;
@@ -197,19 +204,23 @@ export function ShowBrandMediaPanel({ showId, showName, connectionId }: ShowBran
   );
 
   return (
-    <section style={{ marginTop: 14, padding: 14, border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14 }} aria-label={`${showName} intro and outro`}>
-      <strong>Intro & outro media</strong>
-      <p className="muted" style={{ margin: "5px 0 12px" }}>Original media stays unchanged in your Drive. Interrupted uploads automatically check Drive and resume from the confirmed byte position.</p>
-      {loading ? <p className="muted">Loading intro/outro…</p> : (
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          {control("Intro", "show-intro-original", intro)}
-          {control("Outro", "show-outro-original", outro)}
-        </div>
-      )}
-      {uploadingKind && <progress max={100} value={progress} style={{ width: "100%", marginTop: 12 }} />}
-      {notice && <div className="notice success" style={{ marginTop: 12 }}>{notice}</div>}
-      {error && <div className="notice error" style={{ marginTop: 12 }}>{error}</div>}
-      {media.length > 2 && <details style={{ marginTop: 12 }}><summary>Previous intro/outro originals ({media.length - 2})</summary></details>}
-    </section>
+    <>
+      <section style={{ marginTop: 14, padding: 14, border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14 }} aria-label={`${showName} intro and outro`}>
+        <strong>Intro & outro media</strong>
+        <p className="muted" style={{ margin: "5px 0 12px" }}>Original media stays unchanged in your Drive. Interrupted uploads automatically check Drive and resume from the confirmed byte position.</p>
+        {loading ? <p className="muted">Loading intro/outro…</p> : (
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            {control("Intro", "show-intro-original", intro)}
+            {control("Outro", "show-outro-original", outro)}
+          </div>
+        )}
+        {uploadingKind && <progress max={100} value={progress} style={{ width: "100%", marginTop: 12 }} />}
+        {notice && <div className="notice success" style={{ marginTop: 12 }}>{notice}</div>}
+        {error && <div className="notice error" style={{ marginTop: 12 }}>{error}</div>}
+        {media.length > 2 && <details style={{ marginTop: 12 }}><summary>Previous intro/outro originals ({media.length - 2})</summary></details>}
+      </section>
+
+      <RecorderPanel showId={showId} showName={showName} connectionId={connectionId} />
+    </>
   );
 }

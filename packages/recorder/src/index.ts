@@ -22,5 +22,4 @@ export interface RecorderDevice {
   label: string;
 }
 
-// The concrete browser implementation will use MediaRecorder plus IndexedDB
-// chunk persistence. This package intentionally defines the contract first.
+export * from "./browser";

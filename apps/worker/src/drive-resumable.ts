@@ -1,4 +1,3 @@
-import { MAX_SMALL_DRIVE_UPLOAD_BYTES } from "./drive-upload";
 import { decryptStorageToken, encryptStorageToken } from "./token-crypto";
 
 export const RESUMABLE_CHUNK_GRANULARITY_BYTES = 256 * 1024;
@@ -87,18 +86,12 @@ export const parseResumableUploadStartBody = (
   if (
     typeof totalBytes !== "number" ||
     !Number.isSafeInteger(totalBytes) ||
-    totalBytes <= MAX_SMALL_DRIVE_UPLOAD_BYTES
+    totalBytes <= 0
   ) {
     throw new ResumableUploadValidationError("resumable_total_bytes_invalid");
   }
 
-  return {
-    showId,
-    connectionId,
-    fileName,
-    mimeType,
-    totalBytes,
-  };
+  return { showId, connectionId, fileName, mimeType, totalBytes };
 };
 
 const validateSessionUrl = (value: unknown) => {
@@ -170,11 +163,7 @@ export const createResumableUploadToken = async (
     issuedAt: now,
     expiresAt: now + RESUMABLE_UPLOAD_TOKEN_TTL_MS,
   };
-  return encryptStorageToken(
-    JSON.stringify(payload),
-    secret,
-    `drive-resumable:${userId}`,
-  );
+  return encryptStorageToken(JSON.stringify(payload), secret, `drive-resumable:${userId}`);
 };
 
 export const readResumableUploadToken = async (
