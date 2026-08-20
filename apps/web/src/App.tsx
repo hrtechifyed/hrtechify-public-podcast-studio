@@ -234,8 +234,8 @@ export function App() {
             (connection) => connection.provider === "google-drive" && connection.status === "active",
           );
 
-          // Idempotent repair on each signed-in load when one Drive account is connected.
-          // This creates missing folders and repairs renamed app-owned folders without duplication.
+          // Idempotently check and fix app-owned folders on each signed-in load when one Drive account is connected.
+          // This creates missing folders and normalizes renamed app-owned folders without duplication.
           if (activeDrive.length === 1) {
             await provisionAllActiveShows(activeDrive[0].id, true);
           }
@@ -467,7 +467,7 @@ export function App() {
     const targetAccount = connection.accountEmail || "this Google Drive account";
     if (activeGoogleDriveConnections.length > 1) {
       const confirmed = window.confirm(
-        `Prepare or repair active-show folders in ${targetAccount}?\n\nUnassigned active shows will use this Drive account. Shows already assigned to another Drive account will not be moved.`,
+        `Check and prepare active-show folders in ${targetAccount}?\n\nUnassigned active shows will use this Drive account. Shows already assigned to another Drive account will not be moved.`,
       );
       if (!confirmed) return;
     }
@@ -630,7 +630,7 @@ export function App() {
               <p className="muted">
                 Your permanent podcast files stay in your Drive. Each show receives its own Brand Assets, Templates and Episodes folders.
                 {activeGoogleDriveConnections.length > 1 && " You have multiple Drive accounts connected. Choose the specific account below; existing shows assigned to another Drive account will not be moved."}
-                {" Show-level Repair actions affect only the show whose card you clicked."}
+                {" Show-level Check & Fix actions affect only the show whose card you clicked."}
               </p>
             </div>
             <button
@@ -665,8 +665,8 @@ export function App() {
                       disabled={busy}
                     >
                       {activeGoogleDriveConnections.length > 1
-                        ? `Prepare in ${connection.accountEmail || "this Drive"}`
-                        : "Prepare / repair active shows"}
+                        ? `Check & prepare in ${connection.accountEmail || "this Drive"}`
+                        : "Check & prepare active shows"}
                     </button>
                   </div>
                 </article>
@@ -747,9 +747,9 @@ export function App() {
                         disabled={busy || showStorageBusy}
                       >
                         {showStorageBusy
-                          ? "Working on this show…"
+                          ? "Checking Drive folders…"
                           : show.storageConnectionId === connection.id
-                            ? `Repair this show in ${connection.accountEmail || "Google Drive"}`
+                            ? `Check & Fix Drive Folders — ${connection.accountEmail || "Google Drive"}`
                             : `Use ${connection.accountEmail || "Google Drive"} for this show`}
                       </button>
                     ))}
