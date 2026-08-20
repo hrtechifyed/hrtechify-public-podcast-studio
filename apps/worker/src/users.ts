@@ -1,5 +1,6 @@
 import type { D1DatabaseLike } from "./db";
 import type { VerifiedIdentity } from "./auth";
+import { normalizeEmail } from "./auth-utils";
 
 export interface UserRow {
   id: string;
@@ -10,22 +11,112 @@ export interface UserRow {
   updated_at: string;
 }
 
+export const getUserByEmail = async (
+  db: D1DatabaseLike,
+  email: string,
+): Promise<UserRow | null> =>
+  db
+    .prepare(
+      `SELECT id, email, display_name, status, created_at, updated_at
+       FROM users
+       WHERE email = ?`,
+    )
+    .bind(normalizeEmail(email))
+    .first<UserRow>();
+
+export const findOrCreateUserForProvider = async (
+  db: D1DatabaseLike,
+  provider: "google" | "email",
+  subject: string,
+  email: string,
+  displayName?: string,
+): Promise<UserRow> => {
+  const normalizedEmail = normalizeEmail(email);
+
+  const linked = await db
+    .prepare(
+      `SELECT u.id, u.email, u.display_name, u.status, u.created_at, u.updated_at
+       FROM auth_identities i
+       JOIN users u ON u.id = i.user_id
+       WHERE i.provider = ? AND i.subject = ?`,
+    )
+    .bind(provider, subject)
+    .first<UserRow>();
+
+  if (linked) {
+    await db
+      .prepare(
+        `UPDATE users
+         SET email = ?,
+             display_name = COALESCE(?, display_name),
+             updated_at = datetime('now')
+         WHERE id = ?`,
+      )
+      .bind(normalizedEmail, displayName ?? null, linked.id)
+      .run();
+
+    const refreshed = await db
+      .prepare(
+        `SELECT id, email, display_name, status, created_at, updated_at
+         FROM users WHERE id = ?`,
+      )
+      .bind(linked.id)
+      .first<UserRow>();
+
+    if (!refreshed) throw new Error("user_lookup_failed");
+    return refreshed;
+  }
+
+  const existingByEmail = await getUserByEmail(db, normalizedEmail);
+  const userId = existingByEmail?.id ?? crypto.randomUUID();
+
+  if (!existingByEmail) {
+    await db
+      .prepare(
+        `INSERT INTO users (id, email, display_name, status)
+         VALUES (?, ?, ?, 'active')`,
+      )
+      .bind(userId, normalizedEmail, displayName ?? null)
+      .run();
+  } else if (displayName) {
+    await db
+      .prepare(
+        `UPDATE users
+         SET display_name = COALESCE(display_name, ?), updated_at = datetime('now')
+         WHERE id = ?`,
+      )
+      .bind(displayName, userId)
+      .run();
+  }
+
+  await db
+    .prepare(
+      `INSERT INTO auth_identities (provider, subject, user_id, email)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(provider, subject) DO UPDATE SET
+         user_id = excluded.user_id,
+         email = excluded.email,
+         updated_at = datetime('now')`,
+    )
+    .bind(provider, subject, userId, normalizedEmail)
+    .run();
+
+  const user = await db
+    .prepare(
+      `SELECT id, email, display_name, status, created_at, updated_at
+       FROM users WHERE id = ?`,
+    )
+    .bind(userId)
+    .first<UserRow>();
+
+  if (!user) throw new Error("user_create_failed");
+  return user;
+};
+
 export const upsertUserFromIdentity = async (
   db: D1DatabaseLike,
   identity: VerifiedIdentity,
 ): Promise<UserRow> => {
-  await db
-    .prepare(
-      `INSERT INTO users (id, email, display_name, status)
-       VALUES (?, ?, ?, 'active')
-       ON CONFLICT(id) DO UPDATE SET
-         email = excluded.email,
-         display_name = COALESCE(excluded.display_name, users.display_name),
-         updated_at = datetime('now')`,
-    )
-    .bind(identity.userId, identity.email, identity.displayName ?? null)
-    .run();
-
   const user = await db
     .prepare(
       `SELECT id, email, display_name, status, created_at, updated_at
@@ -36,7 +127,7 @@ export const upsertUserFromIdentity = async (
     .first<UserRow>();
 
   if (!user) {
-    throw new Error("user_upsert_failed");
+    throw new Error("authenticated_user_not_found");
   }
 
   return user;

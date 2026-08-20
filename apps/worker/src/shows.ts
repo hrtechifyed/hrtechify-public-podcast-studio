@@ -19,6 +19,12 @@ export interface CreateShowInput {
   description?: string;
 }
 
+export interface UpdateShowInput {
+  name: string;
+  hostDisplayName: string;
+  description?: string;
+}
+
 export class ShowLimitError extends Error {
   constructor() {
     super("active_show_limit_reached");
@@ -33,6 +39,12 @@ const cleanText = (value: string, field: string, maxLength: number) => {
   return cleaned;
 };
 
+const cleanDescription = (value?: string) => {
+  const cleaned = value?.trim() || null;
+  if (cleaned && cleaned.length > 1200) throw new Error("description_too_long");
+  return cleaned;
+};
+
 export const listShowsForUser = async (
   db: D1DatabaseLike,
   userId: string,
@@ -43,7 +55,7 @@ export const listShowsForUser = async (
               storage_connection_id, created_at, updated_at
        FROM shows
        WHERE user_id = ? AND status <> 'deleted'
-       ORDER BY created_at DESC`,
+       ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, created_at DESC`,
     )
     .bind(userId)
     .all<ShowRow>();
@@ -89,14 +101,12 @@ export const createShowForUser = async (
   input: CreateShowInput,
 ): Promise<ShowRow> => {
   const activeCount = await countActiveShowsForUser(db, userId);
-  if (activeCount >= MAX_ACTIVE_SHOWS_PER_USER) {
-    throw new ShowLimitError();
-  }
+  if (activeCount >= MAX_ACTIVE_SHOWS_PER_USER) throw new ShowLimitError();
 
   const id = crypto.randomUUID();
   const name = cleanText(input.name, "show_name", 120);
   const hostDisplayName = cleanText(input.hostDisplayName, "host_name", 120);
-  const description = input.description?.trim() || null;
+  const description = cleanDescription(input.description);
 
   try {
     await db
@@ -117,6 +127,31 @@ export const createShowForUser = async (
   const show = await getShowForUser(db, userId, id);
   if (!show) throw new Error("show_create_failed");
   return show;
+};
+
+export const updateShowForUser = async (
+  db: D1DatabaseLike,
+  userId: string,
+  showId: string,
+  input: UpdateShowInput,
+): Promise<ShowRow | null> => {
+  const existing = await getShowForUser(db, userId, showId);
+  if (!existing) return null;
+
+  const name = cleanText(input.name, "show_name", 120);
+  const hostDisplayName = cleanText(input.hostDisplayName, "host_name", 120);
+  const description = cleanDescription(input.description);
+
+  await db
+    .prepare(
+      `UPDATE shows
+       SET name = ?, host_display_name = ?, description = ?, updated_at = datetime('now')
+       WHERE id = ? AND user_id = ? AND status <> 'deleted'`,
+    )
+    .bind(name, hostDisplayName, description, showId, userId)
+    .run();
+
+  return getShowForUser(db, userId, showId);
 };
 
 export const archiveShowForUser = async (

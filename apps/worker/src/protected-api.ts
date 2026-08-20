@@ -9,6 +9,7 @@ import {
   listShowsForUser,
   restoreShowForUser,
   ShowLimitError,
+  updateShowForUser,
 } from "./shows";
 import { upsertUserFromIdentity } from "./users";
 
@@ -56,6 +57,10 @@ export const handleProtectedApi = async (
     const identity = await requireVerifiedIdentity(request, env);
     const db = requireDatabase(env);
     const user = await upsertUserFromIdentity(db, identity);
+
+    if (user.status !== "active") {
+      return json({ error: "account_not_active" }, 403);
+    }
 
     if (url.pathname === "/api/account" && request.method === "GET") {
       return json({
@@ -105,6 +110,17 @@ export const handleProtectedApi = async (
         return json({ show: serializeShow(show) });
       }
 
+      if (!action && (request.method === "PUT" || request.method === "PATCH")) {
+        const body = await parseBody(request);
+        const show = await updateShowForUser(db, identity.userId, showId, {
+          name: String(body.name ?? ""),
+          hostDisplayName: String(body.hostDisplayName ?? ""),
+          description: typeof body.description === "string" ? body.description : undefined,
+        });
+        if (!show) return json({ error: "show_not_found" }, 404);
+        return json({ show: serializeShow(show) });
+      }
+
       if (action === "archive" && request.method === "POST") {
         const archived = await archiveShowForUser(db, identity.userId, showId);
         if (!archived) return json({ error: "show_not_found" }, 404);
@@ -143,6 +159,9 @@ export const handleProtectedApi = async (
       }
       if (error.message === "invalid_json") {
         return json({ error: "invalid_json" }, 400);
+      }
+      if (error.message === "authenticated_user_not_found") {
+        return json({ error: "authentication_required" }, 401);
       }
       if (error.message.endsWith("_required") || error.message.endsWith("_too_long")) {
         return json({ error: error.message }, 400);

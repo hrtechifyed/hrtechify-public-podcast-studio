@@ -4,6 +4,7 @@ import {
   PLATFORM_CREDIT_POSITION,
 } from "@hrtechify/shared";
 import type { WorkerEnv } from "./db";
+import { handleAuthApi } from "./auth-api";
 import { handleProtectedApi } from "./protected-api";
 
 const json = (body: unknown, status = 200) =>
@@ -33,6 +34,9 @@ export default {
         platformCreditPosition: PLATFORM_CREDIT_POSITION,
       });
     }
+
+    const authResponse = await handleAuthApi(request, url, env);
+    if (authResponse) return authResponse;
 
     const protectedResponse = await handleProtectedApi(request, url, env);
     if (protectedResponse) return protectedResponse;
