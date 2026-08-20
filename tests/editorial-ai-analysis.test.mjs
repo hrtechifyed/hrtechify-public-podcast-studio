@@ -5,6 +5,7 @@ import test from "node:test";
 const analysis = await readFile(new URL("../apps/worker/src/editorial-analysis.ts", import.meta.url), "utf8");
 const api = await readFile(new URL("../apps/worker/src/editorial-edits-api.ts", import.meta.url), "utf8");
 const db = await readFile(new URL("../apps/worker/src/db.ts", import.meta.url), "utf8");
+const storage = await readFile(new URL("../apps/worker/src/studio-storage.ts", import.meta.url), "utf8");
 const wrangler = await readFile(new URL("../apps/worker/wrangler.jsonc", import.meta.url), "utf8");
 const approvalUi = await readFile(new URL("../apps/web/src/EditorialApprovalPanel.tsx", import.meta.url), "utf8");
 const privacy = await readFile(new URL("../apps/web/src/PrivacyPage.tsx", import.meta.url), "utf8");
@@ -17,13 +18,16 @@ test("Workers AI and Media bindings are configured without adding secrets", () =
   assert.doesNotMatch(wrangler, /CLOUDFLARE_API_TOKEN|AI_API_KEY|MEDIA_API_KEY/);
 });
 
-test("analysis is tied to the exact tenant-owned immutable Episode source", () => {
+test("analysis is tied to the exact tenant-owned immutable Episode source across providers", () => {
   assert.match(analysis, /getShowForUser\(db, userId, episode\.show_id\)/);
   assert.match(analysis, /getStorageConnectionForUser\(db, userId, episode\.source_storage_connection_id\)/);
+  assert.match(analysis, /createStudioStorageSession\(env, db, userId, connection\)/);
   assert.match(analysis, /downloadOwnedFile\(show\.id, show\.name, episode\.source_file_id\)/);
+  assert.match(analysis, /download\.file\.provider !== episode\.source_provider/);
   assert.match(analysis, /assetKind !== "original-recording"/);
   assert.match(analysis, /immutable !== "true"/);
   assert.match(analysis, /show\.storage_connection_id !== connection\.id/);
+  assert.match(storage, /requireDropboxAssetRecord/);
 });
 
 test("inline transcription is memory-bounded before Workers AI input is built", () => {
@@ -89,13 +93,13 @@ test("approval UI makes analysis explicit and preserves the existing approval ba
   assert.match(approvalUi, /Neither decision overwrites, trims or replaces/);
 });
 
-test("privacy page discloses Workers AI analysis and Drive-persisted caption timing", () => {
+test("privacy page discloses Workers AI analysis and storage-persisted caption timing", () => {
   assert.match(privacy, /Podcast transcription, captions and edit analysis/);
   assert.match(privacy, /Analyze original recording/);
   assert.match(privacy, /Cloudflare Workers AI/);
   assert.match(privacy, /Cloudflare Media Transformations/);
   assert.match(privacy, /D1 does not store the transcript text/);
-  assert.match(privacy, /exact recognized word tokens and their timestamps/);
-  assert.match(privacy, /saved as separate immutable files in the episode's connected Drive/);
+  assert.match(privacy, /exact recognized word tokens\/timestamps/);
+  assert.match(privacy, /saved as separate immutable files in the episode&apos;s assigned storage/);
   assert.match(privacy, /unrelated to Gmail/);
 });
