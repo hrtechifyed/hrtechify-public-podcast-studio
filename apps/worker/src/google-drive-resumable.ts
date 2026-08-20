@@ -171,10 +171,12 @@ export const uploadGoogleDriveResumableChunk = async (
     contentRange: string;
     contentLength: number;
     mimeType: string;
-    body: ReadableStream<Uint8Array> | null;
+    body: ArrayBuffer;
   },
 ): Promise<ResumableChunkResult> => {
-  if (!input.body) throw new GoogleDriveError("resumable_chunk_body_required", 400);
+  if (input.body.byteLength !== input.contentLength) {
+    throw new GoogleDriveError("resumable_chunk_body_length_mismatch", 400);
+  }
   const accessToken = await refreshAccessToken(env, userId, connection);
   const response = await fetch(input.sessionUrl, {
     method: "PUT",
