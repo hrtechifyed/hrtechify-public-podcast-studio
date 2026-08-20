@@ -33,15 +33,19 @@ const expectValidationError = async (
   });
 };
 
-test("accepts a supported large recording and normalizes MIME type", () => {
+test("accepts supported recordings of any positive size and normalizes MIME type", () => {
   const parsed = parseResumableUploadStartBody({ ...validStart(), mimeType: "VIDEO/WEBM" });
   assert.equal(parsed.mimeType, "video/webm");
   assert.equal(parsed.totalBytes, TWO_MIB);
+
+  const short = parseResumableUploadStartBody({ ...validStart(), mimeType: "audio/webm", totalBytes: 1024 });
+  assert.equal(short.mimeType, "audio/webm");
+  assert.equal(short.totalBytes, 1024);
 });
 
-test("rejects small-file-sized requests, unsafe names, and unsupported MIME types", () => {
+test("rejects empty sizes, unsafe names, and unsupported MIME types", () => {
   assert.throws(
-    () => parseResumableUploadStartBody({ ...validStart(), totalBytes: 1024 }),
+    () => parseResumableUploadStartBody({ ...validStart(), totalBytes: 0 }),
     (error: unknown) => error instanceof ResumableUploadValidationError && error.code === "resumable_total_bytes_invalid",
   );
   assert.throws(
