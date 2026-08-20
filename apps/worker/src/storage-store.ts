@@ -24,6 +24,10 @@ export interface StorageConnectionRow {
   updated_at: string;
 }
 
+const connectionSelect = `SELECT id, user_id, provider, provider_account_id, provider_account_email,
+       refresh_token_encrypted, scopes, status, last_used_at, created_at, updated_at
+  FROM storage_connections`;
+
 export const purgeExpiredStorageOAuthStates = async (db: D1DatabaseLike) => {
   await db
     .prepare("DELETE FROM storage_oauth_states WHERE expires_at <= datetime('now')")
@@ -82,9 +86,7 @@ export const listStorageConnectionsForUser = async (
 ): Promise<StorageConnectionRow[]> => {
   const { results } = await db
     .prepare(
-      `SELECT id, user_id, provider, provider_account_id, provider_account_email,
-              refresh_token_encrypted, scopes, status, last_used_at, created_at, updated_at
-       FROM storage_connections
+      `${connectionSelect}
        WHERE user_id = ?
        ORDER BY created_at ASC`,
     )
@@ -92,6 +94,35 @@ export const listStorageConnectionsForUser = async (
     .all<StorageConnectionRow>();
 
   return results;
+};
+
+export const getStorageConnectionForUser = async (
+  db: D1DatabaseLike,
+  userId: string,
+  connectionId: string,
+): Promise<StorageConnectionRow | null> => {
+  return db
+    .prepare(
+      `${connectionSelect}
+       WHERE id = ? AND user_id = ?`,
+    )
+    .bind(connectionId, userId)
+    .first<StorageConnectionRow>();
+};
+
+export const markStorageConnectionUsed = async (
+  db: D1DatabaseLike,
+  userId: string,
+  connectionId: string,
+) => {
+  await db
+    .prepare(
+      `UPDATE storage_connections
+       SET last_used_at = datetime('now'), updated_at = datetime('now')
+       WHERE id = ? AND user_id = ?`,
+    )
+    .bind(connectionId, userId)
+    .run();
 };
 
 export const upsertStorageConnection = async (
@@ -132,9 +163,7 @@ export const upsertStorageConnection = async (
 
   const row = await db
     .prepare(
-      `SELECT id, user_id, provider, provider_account_id, provider_account_email,
-              refresh_token_encrypted, scopes, status, last_used_at, created_at, updated_at
-       FROM storage_connections
+      `${connectionSelect}
        WHERE user_id = ? AND provider = ? AND provider_account_id = ?`,
     )
     .bind(input.userId, input.provider, input.providerAccountId)
