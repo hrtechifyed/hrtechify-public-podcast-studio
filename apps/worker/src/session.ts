@@ -97,10 +97,6 @@ export const verifySession = async (
   };
 };
 
-/**
- * Used later by a verified authentication callback. It is intentionally not
- * exposed as a public API route in this phase.
- */
 export const createSessionCookie = async (
   identity: VerifiedIdentity,
   secret: string,
@@ -120,3 +116,6 @@ export const createSessionCookie = async (
 
   return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${lifetimeSeconds}`;
 };
+
+export const clearSessionCookie = () =>
+  `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
