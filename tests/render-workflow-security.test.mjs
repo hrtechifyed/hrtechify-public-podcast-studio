@@ -62,7 +62,7 @@ test("FFmpeg container has no public internet and uses direct fixed executable a
   assert.equal(config.workflows[0].class_name, "PodcastRenderWorkflow");
   assert.match(container, /enableInternet = false/);
   assert.match(container, /this\.start\(\{ enableInternet: false \}\)/);
-  assert.match(container, /this\.ctx\.container\.exec\(\["tee", SOURCE_PATH\]/);
+  assert.match(container, /this\.requireRuntime\(\)\.exec\(\["tee", SOURCE_PATH\]/);
   assert.match(container, /"ffmpeg"/);
   assert.doesNotMatch(container, /atempo=/);
   assert.doesNotMatch(container, /asetrate=/);
