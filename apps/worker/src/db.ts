@@ -20,6 +20,7 @@ export interface D1DatabaseLike {
 
 export interface WorkerEnv {
   DB?: D1DatabaseLike;
+  SESSION_SIGNING_KEY?: string;
 }
 
 export const requireDatabase = (env: WorkerEnv): D1DatabaseLike => {
