@@ -24,6 +24,10 @@ interface DropboxMetadata {
   content_hash?: string;
 }
 
+interface DropboxCreateFolderResponse {
+  metadata?: DropboxMetadata;
+}
+
 interface DropboxListFolderResponse {
   entries?: DropboxMetadata[];
   cursor?: string;
@@ -169,16 +173,22 @@ const ensureFolder = async (accessToken: string, path: string) => {
     if (existing[".tag"] !== "folder") throw new DropboxError("dropbox_workspace_path_conflict", 409);
     return existing;
   }
-  return apiJson<DropboxMetadata>(accessToken, "/files/create_folder_v2", {
-    path,
-    autorename: false,
-  }).catch(async (error) => {
+  try {
+    const created = await apiJson<DropboxCreateFolderResponse>(accessToken, "/files/create_folder_v2", {
+      path,
+      autorename: false,
+    });
+    if (!created.metadata || created.metadata[".tag"] !== "folder") {
+      throw new DropboxError("dropbox_folder_metadata_invalid", 502);
+    }
+    return created.metadata;
+  } catch (error) {
     if (error instanceof DropboxError && error.code === "dropbox_conflict") {
       const raced = await getMetadataOrNull(accessToken, path);
       if (raced?.[".tag"] === "folder") return raced;
     }
     throw error;
-  });
+  }
 };
 
 const serialize = (metadata: DropboxMetadata, showId: string): DropboxStoredFile => {
