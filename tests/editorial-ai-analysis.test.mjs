@@ -89,12 +89,13 @@ test("approval UI makes analysis explicit and preserves the existing approval ba
   assert.match(approvalUi, /Neither decision overwrites, trims or replaces/);
 });
 
-test("privacy page discloses Workers AI analysis and transient transcript handling", () => {
-  assert.match(privacy, /Podcast transcription and edit analysis/);
+test("privacy page discloses Workers AI analysis and Drive-persisted caption timing", () => {
+  assert.match(privacy, /Podcast transcription, captions and edit analysis/);
   assert.match(privacy, /Analyze original recording/);
   assert.match(privacy, /Cloudflare Workers AI/);
   assert.match(privacy, /Cloudflare Media Transformations/);
-  assert.match(privacy, /full transcript is used transiently/);
-  assert.match(privacy, /not stored by the Studio in D1/);
+  assert.match(privacy, /D1 does not store the transcript text/);
+  assert.match(privacy, /exact recognized word tokens and their timestamps/);
+  assert.match(privacy, /saved as separate immutable files in the episode's connected Drive/);
   assert.match(privacy, /unrelated to Gmail/);
 });

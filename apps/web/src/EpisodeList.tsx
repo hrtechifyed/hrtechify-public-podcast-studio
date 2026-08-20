@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { EditorialApprovalPanel } from "./EditorialApprovalPanel";
+import { PublishPreferencesPanel } from "./PublishPreferencesPanel";
 import { RenderTechnicalMasterPanel } from "./RenderTechnicalMasterPanel";
 import { TechnicalCleanupSummary } from "./TechnicalCleanupSummary";
 
@@ -40,8 +41,8 @@ const statusLabel = (status: EpisodeRecord["status"]) => {
     case "source_ready": return "Original saved";
     case "analyzing": return "Analyzing";
     case "awaiting_edit_approval": return "Waiting for edit approval";
-    case "awaiting_render_confirmation": return "Ready for render confirmation";
-    case "rendering": return "Rendering";
+    case "awaiting_render_confirmation": return "Ready for final render confirmation";
+    case "rendering": return "Rendering final outputs";
     case "completed": return "Completed";
     case "failed": return "Needs attention";
     case "cancelled": return "Cancelled";
@@ -194,6 +195,11 @@ export function EpisodeList({ showId, showName }: EpisodeListProps) {
                   episodeTitle={episode.title}
                   episodeStatus={episode.status}
                   onStatusChange={(status) => updateEpisodeStatus(episode.id, status)}
+                />
+
+                <PublishPreferencesPanel
+                  episodeId={episode.id}
+                  episodeStatus={episode.status}
                 />
 
                 <RenderTechnicalMasterPanel

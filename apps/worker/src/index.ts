@@ -13,6 +13,7 @@ import { handleEditorialEditsApi } from "./editorial-edits-api";
 import { handleEpisodeApi } from "./episode-api";
 import { handlePasswordAuthApi } from "./password-auth-api";
 import { handleProtectedApi } from "./protected-api";
+import { handlePublishPreferencesApi } from "./publish-preferences-api";
 import { handleRenderApi } from "./render-api";
 import { handleStorageApi } from "./storage-api";
 
@@ -67,6 +68,9 @@ export default {
 
     const editorialEditsResponse = await handleEditorialEditsApi(request, url, env);
     if (editorialEditsResponse) return editorialEditsResponse;
+
+    const publishPreferencesResponse = await handlePublishPreferencesApi(request, url, env);
+    if (publishPreferencesResponse) return publishPreferencesResponse;
 
     const renderResponse = await handleRenderApi(request, url, env);
     if (renderResponse) return renderResponse;

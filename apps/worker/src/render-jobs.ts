@@ -3,9 +3,14 @@ import {
   type SpeechEditKind,
   type TechnicalCleanupPlan,
 } from "@hrtechify/audio";
+import { PLATFORM_CREDIT, PLATFORM_CREDIT_POSITION } from "@hrtechify/shared";
+import { getSafeTemplateManifest, type TemplateManifest } from "@hrtechify/templates";
 import type { D1DatabaseLike } from "./db";
 import { listLatestEditorialProposals } from "./editorial-edits";
+import { getLatestCompletedEditorialRun } from "./editorial-run-query";
 import type { EpisodeRow } from "./episodes";
+import { ensureEpisodePublishPreferences } from "./publish-preferences";
+import { getShowForUser } from "./shows";
 
 export type RenderJobStatus = "queued" | "processing" | "completed" | "failed" | "cancelled";
 
@@ -17,11 +22,32 @@ export interface NormalizedApprovedEdit {
 }
 
 export interface DerivedRenderPlan {
-  version: "render-plan-v1";
+  version: "render-plan-v2";
   sourceFileId: string;
   sourceImmutable: true;
+  analysisRunId: string;
   cleanup: TechnicalCleanupPlan;
   approvedEdits: NormalizedApprovedEdit[];
+  publication: {
+    template: TemplateManifest;
+    captionsEnabled: boolean;
+    display: {
+      showName: string;
+      episodeName: string;
+      hostName: string;
+    };
+    platformCredit: {
+      text: typeof PLATFORM_CREDIT;
+      required: true;
+      removable: false;
+      position: typeof PLATFORM_CREDIT_POSITION;
+    };
+    outputs: {
+      captions: { role: "final-captions-vtt"; mimeType: "text/vtt"; extension: "vtt" };
+      mp3: { role: "final-podcast-mp3"; mimeType: "audio/mpeg"; extension: "mp3" };
+      mp4: { role: "final-podcast-mp4"; mimeType: "video/mp4"; extension: "mp4" };
+    };
+  };
   output: {
     role: "derived-technical-master";
     mimeType: "audio/flac";
@@ -122,6 +148,17 @@ export const buildDerivedRenderPlan = async (
   const unresolved = proposals.filter((proposal) => !proposal.decision);
   if (unresolved.length > 0) throw new Error("render_edit_decisions_incomplete");
 
+  const analysisRun = await getLatestCompletedEditorialRun(db, userId, episode.id);
+  if (!analysisRun || analysisRun.source_file_id !== episode.source_file_id) {
+    throw new Error("render_analysis_not_found");
+  }
+  const [show, preferences] = await Promise.all([
+    getShowForUser(db, userId, episode.show_id),
+    ensureEpisodePublishPreferences(db, userId, episode),
+  ]);
+  if (!show) throw new Error("render_show_not_found");
+  const template = getSafeTemplateManifest(preferences.template_id, preferences.template_version);
+
   const approvedEdits = normalizeApprovedEditRanges(
     proposals
       .filter((proposal) => proposal.decision === "apply")
@@ -135,11 +172,32 @@ export const buildDerivedRenderPlan = async (
   const cleanup = createTechnicalCleanupPlan(true);
 
   return {
-    version: "render-plan-v1",
+    version: "render-plan-v2",
     sourceFileId: episode.source_file_id,
     sourceImmutable: true,
+    analysisRunId: analysisRun.id,
     cleanup,
     approvedEdits,
+    publication: {
+      template,
+      captionsEnabled: preferences.captions_enabled === 1,
+      display: {
+        showName: show.name,
+        episodeName: episode.title,
+        hostName: show.host_display_name,
+      },
+      platformCredit: {
+        text: PLATFORM_CREDIT,
+        required: true,
+        removable: false,
+        position: PLATFORM_CREDIT_POSITION,
+      },
+      outputs: {
+        captions: { role: "final-captions-vtt", mimeType: "text/vtt", extension: "vtt" },
+        mp3: { role: "final-podcast-mp3", mimeType: "audio/mpeg", extension: "mp3" },
+        mp4: { role: "final-podcast-mp4", mimeType: "video/mp4", extension: "mp4" },
+      },
+    },
     output: {
       role: "derived-technical-master",
       mimeType: "audio/flac",
@@ -228,7 +286,7 @@ export const markRenderJobProcessing = async (db: D1DatabaseLike, jobId: string)
   return getRenderJobById(db, jobId);
 };
 
-export const completeRenderJob = async (
+export const recordTechnicalMaster = async (
   db: D1DatabaseLike,
   jobId: string,
   file: { id: string; name: string; mimeType: string; sizeBytes: number },
@@ -239,13 +297,34 @@ export const completeRenderJob = async (
   await db
     .prepare(
       `UPDATE episode_render_jobs
-       SET status = 'completed', derived_file_id = ?, derived_file_name = ?,
-           derived_mime_type = ?, derived_size_bytes = ?, failure_code = NULL,
-           completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+       SET derived_file_id = ?, derived_file_name = ?, derived_mime_type = ?, derived_size_bytes = ?,
            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
        WHERE id = ? AND status IN ('queued', 'processing')`,
     )
     .bind(file.id, file.name, file.mimeType, file.sizeBytes, jobId)
+    .run();
+  return getRenderJobById(db, jobId);
+};
+
+export const completeRenderJob = async (db: D1DatabaseLike, jobId: string) => {
+  const current = await getRenderJobById(db, jobId);
+  if (
+    !current?.derived_file_id ||
+    current.derived_mime_type !== "audio/flac" ||
+    !current.derived_size_bytes ||
+    current.derived_size_bytes <= 0
+  ) {
+    throw new Error("render_technical_master_missing");
+  }
+  await db
+    .prepare(
+      `UPDATE episode_render_jobs
+       SET status = 'completed', failure_code = NULL,
+           completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       WHERE id = ? AND status IN ('queued', 'processing')`,
+    )
+    .bind(jobId)
     .run();
   return getRenderJobById(db, jobId);
 };
@@ -278,15 +357,32 @@ export const parseStoredRenderPlan = (job: RenderJobRow): DerivedRenderPlan => {
   }
   if (!value || typeof value !== "object") throw new Error("render_plan_corrupt");
   const plan = value as DerivedRenderPlan;
+  let template: TemplateManifest;
+  try {
+    template = getSafeTemplateManifest(plan.publication?.template?.id, plan.publication?.template?.version);
+  } catch {
+    throw new Error("render_plan_corrupt");
+  }
   if (
-    plan.version !== "render-plan-v1" ||
+    plan.version !== "render-plan-v2" ||
     plan.sourceFileId !== job.source_file_id ||
     plan.sourceImmutable !== true ||
+    typeof plan.analysisRunId !== "string" || !plan.analysisRunId ||
     plan.cleanup?.profileVersion !== job.cleanup_profile_version ||
     plan.output?.role !== "derived-technical-master" ||
     plan.output?.mimeType !== "audio/flac" ||
     plan.output?.extension !== "flac" ||
-    !Array.isArray(plan.approvedEdits)
+    !Array.isArray(plan.approvedEdits) ||
+    plan.publication?.template?.id !== template.id ||
+    plan.publication?.template?.version !== template.version ||
+    typeof plan.publication?.captionsEnabled !== "boolean" ||
+    plan.publication?.platformCredit?.text !== PLATFORM_CREDIT ||
+    plan.publication?.platformCredit?.required !== true ||
+    plan.publication?.platformCredit?.removable !== false ||
+    plan.publication?.platformCredit?.position !== PLATFORM_CREDIT_POSITION ||
+    plan.publication?.outputs?.captions?.role !== "final-captions-vtt" ||
+    plan.publication?.outputs?.mp3?.role !== "final-podcast-mp3" ||
+    plan.publication?.outputs?.mp4?.role !== "final-podcast-mp4"
   ) {
     throw new Error("render_plan_corrupt");
   }

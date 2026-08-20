@@ -1,16 +1,34 @@
 import { useEffect, useState } from "react";
 
+interface OutputFile {
+  fileId: string;
+  fileName: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  openUrl: string | null;
+}
+
 interface RenderJob {
   id: string;
   episodeId: string;
   status: "queued" | "processing" | "completed" | "failed" | "cancelled";
   cleanupProfileVersion: string;
   approvedEditRangeCount: number;
-  derived: {
+  publication: {
+    template: { id: string; name: string; version: number };
+    captionsEnabled: boolean;
+    platformCredit: string;
+  } | null;
+  technicalMaster: {
     fileId: string;
     fileName: string | null;
     mimeType: string | null;
     sizeBytes: number | null;
+  } | null;
+  finalOutputs: {
+    captions: OutputFile | null;
+    mp3: OutputFile | null;
+    mp4: OutputFile | null;
   } | null;
   failureCode: string | null;
   createdAt: string;
@@ -33,12 +51,23 @@ const formatBytes = (bytes: number | null) => {
 };
 
 const jobLabel = (job: RenderJob | null) => {
-  if (!job) return "No technical-master render has been started.";
-  if (job.status === "queued") return "Render queued.";
-  if (job.status === "processing") return "Creating technical master…";
-  if (job.status === "completed") return "Technical master created.";
-  if (job.status === "failed") return "Technical-master render needs attention.";
+  if (!job) return "No final render has been started.";
+  if (job.status === "queued") return "Final render queued.";
+  if (job.status === "processing") return "Creating technical master and final outputs…";
+  if (job.status === "completed") return "Final podcast outputs created.";
+  if (job.status === "failed") return "Final render needs attention.";
   return "Render cancelled.";
+};
+
+const OutputLink = ({ label, file }: { label: string; file: OutputFile | null }) => {
+  if (!file) return <span>{label}: not found.</span>;
+  return (
+    <span>
+      {label}: {file.openUrl ? (
+        <a href={file.openUrl} target="_blank" rel="noreferrer">{file.fileName}</a>
+      ) : file.fileName} · {formatBytes(file.sizeBytes)} · {file.mimeType || "type unavailable"}
+    </span>
+  );
 };
 
 export function RenderTechnicalMasterPanel({
@@ -68,13 +97,13 @@ export function RenderTechnicalMasterPanel({
         setLoaded(true);
         return;
       }
-      if (!response.ok) throw new Error(payload?.error || "Could not load render status.");
+      if (!response.ok) throw new Error(payload?.error || "Could not load final-render status.");
       setSchemaReady(true);
       setJob(payload?.job ?? null);
       if (payload?.episodeStatus) onStatusChange?.(payload.episodeStatus);
       setLoaded(true);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load render status.");
+      setError(caught instanceof Error ? caught.message : "Could not load final-render status.");
       setLoaded(true);
     }
   };
@@ -109,11 +138,11 @@ export function RenderTechnicalMasterPanel({
         episodeStatus?: string;
         error?: string;
       } | null;
-      if (!response.ok || !payload?.job) throw new Error(payload?.error || "Could not start technical-master render.");
+      if (!response.ok || !payload?.job) throw new Error(payload?.error || "Could not start final render.");
       setJob(payload.job);
       if (payload.episodeStatus) onStatusChange?.(payload.episodeStatus);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not start technical-master render.");
+      setError(caught instanceof Error ? caught.message : "Could not start final render.");
     } finally {
       setBusy(false);
     }
@@ -125,18 +154,21 @@ export function RenderTechnicalMasterPanel({
 
   return (
     <div className="trust-note" style={{ marginTop: 10 }}>
-      <strong>Technical master for {episodeTitle}</strong>
+      <strong>Final episode outputs for {episodeTitle}</strong>
       <span>
-        This is the final confirmation before audio processing begins. The render creates a new immutable FLAC in your Episodes folder. Your original recording is never overwritten or replaced.
+        This is the final confirmation before processing begins. It creates a technical master, a downloadable WebVTT caption file, a final MP3 and a final MP4. Your original recording is never overwritten or replaced.
       </span>
       <span>
-        Only edit ranges you explicitly marked “Apply in final edit” are removed. Technical cleanup is limited to the fixed HRTechify podcast profile and preserves words, pitch and speaking speed outside those approved cuts.
+        Only edit ranges you explicitly marked “Apply in final edit” are removed. Your current immutable show intro and outro are included when present. Technical cleanup preserves words, pitch and speaking speed outside those approved cuts.
+      </span>
+      <span>
+        The video uses the saved curated template. Burned-in captions follow the approved edited timeline, and “Powered by HRTechify” remains mandatory.
       </span>
 
       {!loaded ? (
-        <span>Checking render status…</span>
+        <span>Checking final-render status…</span>
       ) : !schemaReady ? (
-        <span>Render tracking is not enabled in the database yet. No audio processing can start.</span>
+        <span>Final-render tracking is not enabled in the database yet. No audio or video processing can start.</span>
       ) : (
         <>
           <span>{jobLabel(job)}</span>
@@ -145,10 +177,22 @@ export function RenderTechnicalMasterPanel({
               {job.approvedEditRangeCount} approved cut range{job.approvedEditRangeCount === 1 ? "" : "s"} · cleanup profile {job.cleanupProfileVersion}
             </span>
           )}
-          {job?.status === "completed" && job.derived && (
+          {job?.publication && (
             <span>
-              Saved as {job.derived.fileName || "technical master"} · {formatBytes(job.derived.sizeBytes)} · {job.derived.mimeType || "audio/flac"}
+              Template: {job.publication.template.name} v{job.publication.template.version} · burned-in captions {job.publication.captionsEnabled ? "on" : "off"} · {job.publication.platformCredit}
             </span>
+          )}
+          {job?.status === "completed" && (
+            <>
+              {job.technicalMaster && (
+                <span>
+                  Technical master: {job.technicalMaster.fileName || "technical master"} · {formatBytes(job.technicalMaster.sizeBytes)} · {job.technicalMaster.mimeType || "audio/flac"}
+                </span>
+              )}
+              <OutputLink label="WebVTT captions" file={job.finalOutputs?.captions ?? null} />
+              <OutputLink label="Final MP3" file={job.finalOutputs?.mp3 ?? null} />
+              <OutputLink label="Final MP4" file={job.finalOutputs?.mp4 ?? null} />
+            </>
           )}
           {job?.status === "failed" && job.failureCode && (
             <span>Failure code: {job.failureCode}. The immutable original remains unchanged.</span>
@@ -156,7 +200,7 @@ export function RenderTechnicalMasterPanel({
 
           {episodeStatus === "awaiting_render_confirmation" && job?.status !== "queued" && job?.status !== "processing" && (
             <button type="button" className="primary-action compact" onClick={() => void startRender()} disabled={busy}>
-              {busy ? "Starting render…" : "Create technical master"}
+              {busy ? "Starting render…" : "Create final MP3 + MP4"}
             </button>
           )}
           {(job?.status === "queued" || job?.status === "processing") && (

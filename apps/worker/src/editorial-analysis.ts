@@ -1,4 +1,5 @@
 import type { SpeechEditKind } from "@hrtechify/audio";
+import { buildWebVtt, createCaptionTimingDocument } from "@hrtechify/renderer";
 import type { D1DatabaseLike, WorkerEnv } from "./db";
 import {
   completeEditorialAnalysisRun,
@@ -8,6 +9,7 @@ import {
 } from "./editorial-edits";
 import type { EpisodeRow } from "./episodes";
 import { createGoogleDriveSession } from "./google-drive";
+import { uploadGoogleDriveEpisodePublishArtifactBytes } from "./google-drive-publish-artifacts";
 import { getShowForUser } from "./shows";
 import { getStorageConnectionForUser } from "./storage-store";
 
@@ -389,6 +391,57 @@ const sourceAudioBytes = async (
   return readBoundedResponse(response);
 };
 
+const persistCaptionAnalysisArtifacts = async (
+  env: WorkerEnv,
+  db: D1DatabaseLike,
+  userId: string,
+  episode: EpisodeRow,
+  analysisRunId: string,
+  words: TimedWord[],
+) => {
+  const [show, connection] = await Promise.all([
+    getShowForUser(db, userId, episode.show_id),
+    getStorageConnectionForUser(db, userId, episode.source_storage_connection_id),
+  ]);
+  if (!show) throw new EditorialAnalysisError("show_not_found", 404);
+  if (!connection || connection.provider !== "google-drive") {
+    throw new EditorialAnalysisError("google_drive_connection_not_found", 404);
+  }
+  if (show.storage_connection_id !== connection.id) {
+    throw new EditorialAnalysisError("show_storage_connection_mismatch", 409);
+  }
+
+  const exactWords = words.map(({ word, startMs, endMs }) => ({ word, startMs, endMs }));
+  const document = createCaptionTimingDocument({
+    episodeId: episode.id,
+    sourceFileId: episode.source_file_id,
+    analysisRunId,
+    words: exactWords,
+  });
+  const encoder = new TextEncoder();
+  const timingBytes = encoder.encode(JSON.stringify(document));
+  const vttBytes = encoder.encode(buildWebVtt(exactWords));
+  const scope = {
+    showId: show.id,
+    showName: show.name,
+    sourceFileId: episode.source_file_id,
+    analysisRunId,
+  } as const;
+
+  await uploadGoogleDriveEpisodePublishArtifactBytes(env, userId, connection, {
+    ...scope,
+    assetKind: "caption-word-timings",
+    fileName: `caption-words-${analysisRunId}.json`,
+    bytes: timingBytes,
+  });
+  await uploadGoogleDriveEpisodePublishArtifactBytes(env, userId, connection, {
+    ...scope,
+    assetKind: "source-captions-vtt",
+    fileName: `source-captions-${analysisRunId}.vtt`,
+    bytes: vttBytes,
+  });
+};
+
 const failureCode = (error: unknown) => {
   if (error instanceof EditorialAnalysisError) return error.code;
   if (error instanceof Error && /^[a-z0-9_]{1,120}$/i.test(error.message)) return error.message;
@@ -413,6 +466,7 @@ export const runEditorialAnalysis = async (
     runId = run.id;
     const bytes = await sourceAudioBytes(env, db, userId, episode);
     const words = await transcribe(env, bytes);
+    await persistCaptionAnalysisArtifacts(env, db, userId, episode, run.id, words);
     const deterministic = [
       ...detectLongPauses(words),
       ...detectImmediateRepeatedSpeech(words),
@@ -424,6 +478,7 @@ export const runEditorialAnalysis = async (
       analyzerVersion: EDITORIAL_ANALYZER_VERSION,
       transcriptWordCount: words.length,
       proposalCount: result.proposalCount,
+      captionArtifactsStored: true,
     };
   } catch (error) {
     if (runId) {
