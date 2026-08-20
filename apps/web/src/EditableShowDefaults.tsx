@@ -25,10 +25,10 @@ export function EditableShowDefaults({
   onUpdated,
 }: EditableShowDefaultsProps) {
   const [editing, setEditing] = useState<EditableField>(null);
-  const [showValue, setShowValue] = useState(showName);
-  const [hostValue, setHostValue] = useState(hostName);
-  const [episodeValue, setEpisodeValue] = useState(HRTECHIFY_STARTER_EPISODE_NAME);
-  const [savedEpisodeValue, setSavedEpisodeValue] = useState(HRTECHIFY_STARTER_EPISODE_NAME);
+  const [showValue, setShowValue] = useState<string>(showName);
+  const [hostValue, setHostValue] = useState<string>(hostName);
+  const [episodeValue, setEpisodeValue] = useState<string>(HRTECHIFY_STARTER_EPISODE_NAME);
+  const [savedEpisodeValue, setSavedEpisodeValue] = useState<string>(HRTECHIFY_STARTER_EPISODE_NAME);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
