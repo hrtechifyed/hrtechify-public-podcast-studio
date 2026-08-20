@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS episodes (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (show_id) REFERENCES shows(id) ON DELETE CASCADE,
   FOREIGN KEY (source_storage_connection_id) REFERENCES storage_connections(id),
-  UNIQUE (show_id, source_file_id)
+  UNIQUE (show_id, source_provider, source_file_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_episodes_user_show_created
