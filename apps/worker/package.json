@@ -13,6 +13,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply hrtechify-public-podcast-studio --remote"
   },
   "dependencies": {
+    "@hrtechify/audio": "0.1.0",
     "@hrtechify/shared": "0.1.0"
   },
   "devDependencies": {
