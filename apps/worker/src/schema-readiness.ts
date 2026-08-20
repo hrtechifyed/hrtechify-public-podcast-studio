@@ -32,8 +32,13 @@ export const ONBOARDING_TABLES = [
   "show_preferences",
 ] as const;
 
+export const EPISODE_TABLES = ["episodes"] as const;
+
 export const isPasswordAuthSchemaReady = (db: D1DatabaseLike) =>
   allTablesExist(db, PASSWORD_AUTH_TABLES);
 
 export const isOnboardingSchemaReady = (db: D1DatabaseLike) =>
   allTablesExist(db, ONBOARDING_TABLES);
+
+export const isEpisodeSchemaReady = (db: D1DatabaseLike) =>
+  allTablesExist(db, EPISODE_TABLES);
