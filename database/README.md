@@ -1,14 +1,26 @@
 # Database
 
-Database migrations will live in this directory when the multi-user D1 schema is introduced.
+HRTechify Public Podcast Studio uses Cloudflare D1 for small application metadata. User media does not belong in D1.
 
-The first schema phase will cover authenticated users, storage connections, shows, brand assets, templates, episodes, recordings, edit reviews, jobs, outputs, usage events and audit events.
+## Current schema
 
-## Fixed rules
+`migrations/0001_multi_user_foundation.sql` introduces:
 
-- Every tenant-owned record must be attributable to the authenticated user, directly or through its parent show.
-- A user may have no more than **5 active shows**.
-- The API must enforce ownership server-side; client-supplied `user_id` values never grant access.
-- Media bytes do not belong in D1. D1 stores compact metadata and provider file references.
+- `users`
+- `shows`
+- indexes for per-user show lookup
+- database triggers that prevent more than five active shows for one user
 
-No production database is connected in the application skeleton phase.
+The five-show rule is enforced twice: in application code and in D1 as defense in depth.
+
+## Tenant rule
+
+Every query for a user-owned object must include the authenticated server-side `user_id`. The browser must never gain access merely by supplying an object ID or a `user_id` value.
+
+## Applying migrations
+
+A D1 database and binding are intentionally not hard-coded in the public repository. Once the Cloudflare environment is created, bind it to the Worker as `DB` and apply migrations using Wrangler.
+
+Do not commit credentials, user data or production secrets. Media bytes remain in user-selected cloud storage rather than D1.
+
+Later migrations will add storage connections, brand assets, templates, episodes, recordings, edit reviews, jobs, outputs, usage events and audit events.

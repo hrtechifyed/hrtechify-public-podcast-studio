@@ -3,6 +3,8 @@ import {
   PLATFORM_CREDIT,
   PLATFORM_CREDIT_POSITION,
 } from "@hrtechify/shared";
+import type { WorkerEnv } from "./db";
+import { handleProtectedApi } from "./protected-api";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body, null, 2), {
@@ -14,7 +16,7 @@ const json = (body: unknown, status = 200) =>
   });
 
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/health") {
@@ -31,6 +33,9 @@ export default {
         platformCreditPosition: PLATFORM_CREDIT_POSITION,
       });
     }
+
+    const protectedResponse = await handleProtectedApi(request, url, env);
+    if (protectedResponse) return protectedResponse;
 
     return json(
       {

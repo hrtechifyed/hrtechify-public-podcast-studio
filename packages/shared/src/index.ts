@@ -4,12 +4,26 @@ export const PLATFORM_CREDIT_POSITION = "bottom-right" as const;
 
 export type StorageProviderName = "google-drive" | "dropbox";
 
+export interface UserSummary {
+  id: string;
+  email: string;
+  displayName: string | null;
+  status: "active" | "suspended" | "deleted";
+}
+
 export interface ShowSummary {
   id: string;
   name: string;
   hostName: string;
-  storageProvider: StorageProviderName;
+  description?: string | null;
+  storageProvider: StorageProviderName | null;
   status: "active" | "archived" | "deleted";
+}
+
+export interface CreateShowRequest {
+  name: string;
+  hostDisplayName: string;
+  description?: string;
 }
 
 export interface EpisodeSummary {
