@@ -51,11 +51,24 @@ export interface MediaBindingLike {
   input(source: ReadableStream<Uint8Array>): MediaInputLike;
 }
 
+export interface WorkflowInstanceLike {
+  id: string;
+}
+
+export interface WorkflowBindingLike {
+  create(options: {
+    id: string;
+    params: { jobId: string };
+  }): Promise<WorkflowInstanceLike>;
+}
+
 export interface WorkerEnv {
   DB?: D1DatabaseLike;
   IMAGES?: ImagesBindingLike;
   AI?: AiBindingLike;
   MEDIA?: MediaBindingLike;
+  RENDER_WORKFLOW?: WorkflowBindingLike;
+  RENDER_CONTAINER?: unknown;
   SESSION_SIGNING_KEY?: string;
   GOOGLE_AUTH_CLIENT_ID?: string;
   GOOGLE_AUTH_CLIENT_SECRET?: string;

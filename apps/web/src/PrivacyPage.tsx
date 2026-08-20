@@ -70,6 +70,13 @@ export function PrivacyPage() {
           <p>This processing is unrelated to Gmail. Podcast analysis does not request or use Gmail, Contacts or Calendar permissions.</p>
         </PrivacySection>
 
+        <PrivacySection title="Technical-master rendering">
+          <p>Audio rendering starts only after all proposed editorial changes have an explicit decision and you choose <strong>Create technical master</strong>. The render plan is assembled server-side from those stored decisions and the fixed HRTechify technical-cleanup profile; the browser cannot submit arbitrary cut ranges, FFmpeg filters, shell commands or loudness settings.</p>
+          <p>The exact immutable episode source is streamed from its assigned Google Drive connection into an isolated Cloudflare Container running FFmpeg. The render container has public internet access disabled. Google OAuth credentials and Google Drive resumable-upload URLs are never passed into the container.</p>
+          <p>Temporary source and working audio exist only on the container's ephemeral disk while that render runs. The resulting technical master is streamed back through the Worker and saved as a separate immutable FLAC in the same show's Episodes folder. Temporary container files are removed after the operation and the original Drive recording is never overwritten.</p>
+          <p>Technical cleanup is currently limited to two-pass loudness/peak normalization under the fixed podcast profile. Outside user-approved editorial cuts, the render verifies duration integrity and does not apply speaking-speed or pitch-changing filters.</p>
+        </PrivacySection>
+
         <PrivacySection title="Passwords and account recovery">
           <p>For email/password accounts, HRTechify does not store readable or reversible passwords. Passwords are processed with <strong>PBKDF2-HMAC-SHA256</strong>, a unique random salt and <strong>600,000 iterations</strong>; only the resulting hash material is stored.</p>
           <p>Password sign-up is email-verification-first. Verification links expire after 30 minutes and are single-use. Password-reset links expire after 20 minutes and are single-use. The random link token itself is not stored in D1; only its SHA-256 hash is stored.</p>
@@ -78,11 +85,11 @@ export function PrivacyPage() {
 
         <PrivacySection title="Sessions and OAuth credentials">
           <p>Signed-in Studio sessions use a server-signed cookie named <code>__Host-hrtechify_session</code> with <strong>HttpOnly</strong>, <strong>Secure</strong> and <strong>SameSite=Lax</strong> attributes. This prevents client-side JavaScript from reading the session cookie.</p>
-          <p>Google Drive refresh tokens are encrypted server-side before storage. Google OAuth access tokens and Google resumable-upload URLs stay on the server and are not returned to the browser. Browser uploads use HRTechify's own protected opaque resumable token.</p>
+          <p>Google Drive refresh tokens are encrypted server-side before storage. Google OAuth access tokens and Google resumable-upload URLs stay on the server and are not returned to the browser or supplied to the render container. Browser uploads use HRTechify's own protected opaque resumable token.</p>
         </PrivacySection>
 
         <PrivacySection title="Services involved">
-          <p><strong>Cloudflare</strong> runs the Worker and D1 database, the image-processing binding used when you explicitly request background removal, Workers AI used when you explicitly request podcast analysis, and Media Transformations when a video source needs its audio extracted for analysis.</p>
+          <p><strong>Cloudflare</strong> runs the Worker and D1 database, the image-processing binding used when you explicitly request background removal, Workers AI used when you explicitly request podcast analysis, Media Transformations when a video source needs its audio extracted for analysis, and isolated Workflows/Containers used after you explicitly confirm technical-master rendering.</p>
           <p><strong>Google</strong> provides optional Google Sign-In and, separately, optional Google Drive storage when you authorize it.</p>
           <p><strong>Transactional email</strong> is used only for account verification, password recovery, or other account-authentication emails when email delivery is enabled. The current codebase uses a configured Resend integration for that delivery; HRTechify does not need Gmail inbox access to send those emails.</p>
         </PrivacySection>

@@ -40,6 +40,8 @@ export const EDITORIAL_APPROVAL_TABLES = [
   "episode_edit_decisions",
 ] as const;
 
+export const RENDER_JOB_TABLES = ["episode_render_jobs"] as const;
+
 export const isPasswordAuthSchemaReady = (db: D1DatabaseLike) =>
   allTablesExist(db, PASSWORD_AUTH_TABLES);
 
@@ -51,3 +53,6 @@ export const isEpisodeSchemaReady = (db: D1DatabaseLike) =>
 
 export const isEditorialApprovalSchemaReady = (db: D1DatabaseLike) =>
   allTablesExist(db, EDITORIAL_APPROVAL_TABLES);
+
+export const isRenderJobSchemaReady = (db: D1DatabaseLike) =>
+  allTablesExist(db, RENDER_JOB_TABLES);

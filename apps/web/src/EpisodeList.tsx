@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { EditorialApprovalPanel } from "./EditorialApprovalPanel";
+import { RenderTechnicalMasterPanel } from "./RenderTechnicalMasterPanel";
 import { TechnicalCleanupSummary } from "./TechnicalCleanupSummary";
 
 interface EpisodeRecord {
@@ -189,6 +190,13 @@ export function EpisodeList({ showId, showName }: EpisodeListProps) {
                 <TechnicalCleanupSummary sourceImmutable={episode.source.immutable} />
 
                 <EditorialApprovalPanel
+                  episodeId={episode.id}
+                  episodeTitle={episode.title}
+                  episodeStatus={episode.status}
+                  onStatusChange={(status) => updateEpisodeStatus(episode.id, status)}
+                />
+
+                <RenderTechnicalMasterPanel
                   episodeId={episode.id}
                   episodeTitle={episode.title}
                   episodeStatus={episode.status}
