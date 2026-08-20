@@ -28,6 +28,8 @@ interface RenderWorkflowEnv extends WorkerEnv {
   RENDER_CONTAINER: DurableObjectNamespace<PodcastRenderContainer>;
 }
 
+export const MAX_RENDER_SOURCE_BYTES = 1024 * 1024 * 1024;
+
 const safeFailureCode = (error: unknown) => {
   const code = error instanceof Error ? error.message : "render_failed";
   if (/^(render_|google_drive_|episode_|storage_)[a-z0-9_]{1,110}$/.test(code)) return code;
@@ -104,6 +106,13 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
           ) {
             throw new Error("render_source_snapshot_mismatch");
           }
+          if (
+            !Number.isSafeInteger(episode.source_size_bytes) ||
+            episode.source_size_bytes <= 0 ||
+            episode.source_size_bytes > MAX_RENDER_SOURCE_BYTES
+          ) {
+            throw new Error("render_source_too_large");
+          }
           const show = await getShowForUser(db, job.user_id, job.show_id);
           if (!show) throw new Error("render_show_not_found");
           const connection = await getStorageConnectionForUser(
@@ -148,7 +157,8 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
           if (
             source.file.id !== job.source_file_id ||
             source.file.appProperties.assetKind !== "original-recording" ||
-            source.file.appProperties.immutable !== "true"
+            source.file.appProperties.immutable !== "true" ||
+            source.file.sizeBytes !== episode.source_size_bytes
           ) {
             throw new Error("render_source_not_immutable_original");
           }
