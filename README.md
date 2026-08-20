@@ -37,6 +37,71 @@ The product is designed to reproduce the proven workflow of the existing HRTechi
 14. Save final outputs to the user's selected storage.
 15. Remove temporary processing media according to the retention policy.
 
+## Application structure
+
+The implementation is an npm-workspace monorepo:
+
+```text
+apps/
+  web/        React + Vite application
+  worker/     Cloudflare Worker API
+packages/
+  shared/     Product constants and shared types
+  storage/    Provider-neutral storage contracts
+  recorder/   Browser recording contracts
+  audio/      Audio and edit-approval contracts
+  templates/  Template manifest and branding rules
+  renderer/   Final render contracts
+database/     Future D1 migrations
+tests/        Cross-package and end-to-end tests
+```
+
+The application skeleton intentionally has **no production database, OAuth provider, storage account or deployment secret connected yet**.
+
+## Local development
+
+Requirements:
+
+- Node.js 20 or newer
+- npm
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the web application:
+
+```bash
+npm run dev:web
+```
+
+Run the Worker API locally in a second terminal:
+
+```bash
+npm run dev:worker
+```
+
+Type-check all workspaces:
+
+```bash
+npm run typecheck
+```
+
+Build the web application and validate the Worker:
+
+```bash
+npm run build
+```
+
+The initial Worker exposes only non-sensitive development routes:
+
+- `GET /api/health`
+- `GET /api/config`
+
+The public config route exposes fixed product rules such as the maximum of five active shows and the mandatory platform credit. It contains no credentials or user data.
+
 ## Documentation
 
 - [How It Works](HOW_IT_WORKS.md)
