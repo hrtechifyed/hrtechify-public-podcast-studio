@@ -168,7 +168,7 @@ const finishGoogle = async (request: Request, env: WorkerEnv) => {
       profile.email,
     );
   } catch (error) {
-    if (error instanceof Error && error.message === "unverified_password_email_conflict") {
+    if (error instanceof Error && error.message === "password_identity_conflict") {
       return redirect(errorDestination(request, env, "google_password_account_conflict"));
     }
     throw error;
@@ -255,7 +255,7 @@ const finishEmail = async (request: Request, env: WorkerEnv) => {
       magicLink.email,
     );
   } catch (error) {
-    if (error instanceof Error && error.message === "unverified_password_email_conflict") {
+    if (error instanceof Error && error.message === "password_identity_conflict") {
       return redirect(errorDestination(request, env, "email_password_account_conflict"));
     }
     throw error;
