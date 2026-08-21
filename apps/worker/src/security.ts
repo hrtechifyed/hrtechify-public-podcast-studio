@@ -64,7 +64,7 @@ export const applySecurityHeaders = (response: Response, request: Request) => {
   headers.set("permissions-policy", "camera=(), geolocation=(), microphone=(self)");
   headers.set(
     "content-security-policy",
-    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://hrtechify.com data: blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; worker-src 'self' blob:",
+    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://hrtechify.com data: blob:; media-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net; font-src 'self'; worker-src 'self' blob:",
   );
   headers.set("cache-control", headers.get("cache-control") || "no-store");
   if (new URL(request.url).protocol === "https:") {
@@ -82,4 +82,5 @@ export const securityConfiguration = {
   sameOriginMutations: true,
   frameEmbeddingAllowed: false,
   microphonePermission: "self-only",
+  browserRendererCoreHost: "https://cdn.jsdelivr.net",
 } as const;
