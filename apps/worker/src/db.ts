@@ -74,6 +74,8 @@ export interface WorkerEnv {
   GOOGLE_AUTH_CLIENT_SECRET?: string;
   GOOGLE_DRIVE_CLIENT_ID?: string;
   GOOGLE_DRIVE_CLIENT_SECRET?: string;
+  DROPBOX_CLIENT_ID?: string;
+  DROPBOX_CLIENT_SECRET?: string;
   TOKEN_ENCRYPTION_KEY?: string;
   RESEND_API_KEY?: string;
   AUTH_EMAIL_FROM?: string;

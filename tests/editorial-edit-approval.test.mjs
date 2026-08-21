@@ -76,8 +76,9 @@ test("editorial routes are schema-gated and run before the generic episode handl
   assert.match(schema, /episode_edit_proposals/);
   assert.match(schema, /episode_edit_decisions/);
   assert.match(api, /editorial_approval_schema_not_ready/);
-  const editorialPosition = index.indexOf("handleEditorialEditsApi(request, url, env)");
-  const episodePosition = index.indexOf("handleEpisodeApi(request, url, env)");
+  const handlerSection = index.slice(index.indexOf("const handlers = ["));
+  const editorialPosition = handlerSection.indexOf("handleEditorialEditsApi,");
+  const episodePosition = handlerSection.indexOf("handleEpisodeApi,");
   assert.ok(editorialPosition >= 0 && episodePosition > editorialPosition);
 });
 

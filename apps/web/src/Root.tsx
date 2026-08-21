@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { App } from "./App";
 import { AuthLanding } from "./AuthLanding";
+import { DropboxStorageWorkspace } from "./DropboxStorageWorkspace";
 import { PrivacyPage } from "./PrivacyPage";
 import { ResetPasswordPage } from "./ResetPasswordPage";
 
@@ -40,5 +41,7 @@ export function Root() {
     );
   }
 
-  return accountState === "authenticated" ? <App /> : <AuthLanding />;
+  return accountState === "authenticated"
+    ? <><App /><DropboxStorageWorkspace /></>
+    : <AuthLanding />;
 }

@@ -8,20 +8,6 @@ import {
 import type { WorkerEnv } from "./db";
 import { requireDatabase } from "./db";
 import { getEpisodeForUser } from "./episodes";
-import {
-  findGoogleDriveDerivedRenderOutput,
-  uploadGoogleDriveDerivedRenderStream,
-} from "./google-drive-derived";
-import { listShowBrandMedia, type BrandMediaRecord } from "./google-drive-brand-media";
-import {
-  findGoogleDriveEpisodePublishArtifact,
-  uploadGoogleDriveEpisodePublishArtifactBytes,
-  uploadGoogleDriveEpisodePublishArtifactStream,
-} from "./google-drive-publish-artifacts";
-import {
-  createGoogleDriveSession,
-  type GoogleDriveFileDownload,
-} from "./google-drive";
 import { PodcastRenderContainer } from "./render-container";
 import {
   completeRenderJob,
@@ -34,9 +20,25 @@ import {
 import {
   isPublishPreferenceSchemaReady,
   isRenderJobSchemaReady,
+  isStorageAssetSchemaReady,
 } from "./schema-readiness";
 import { getShowForUser } from "./shows";
+import { listStudioBrandMedia } from "./storage-brand-media";
+import {
+  findDerivedRenderOutput,
+  uploadDerivedRenderStream,
+} from "./storage-derived";
+import {
+  findEpisodePublishArtifact,
+  uploadEpisodePublishArtifactBytes,
+  uploadEpisodePublishArtifactStream,
+} from "./storage-publish-artifacts";
+import {
+  createStudioStorageSession,
+  type StudioFileDownload,
+} from "./studio-storage";
 import { getStorageConnectionForUser } from "./storage-store";
+import type { BrandMediaRecord } from "./google-drive-brand-media";
 
 interface RenderWorkflowParams {
   jobId: string;
@@ -52,7 +54,7 @@ const MAX_CAPTION_TIMING_BYTES = 8 * 1024 * 1024;
 
 const safeFailureCode = (error: unknown) => {
   const code = error instanceof Error ? error.message : "render_failed";
-  if (/^(render_|google_drive_|episode_|storage_|publish_|caption_)[a-z0-9_]{1,110}$/.test(code)) return code;
+  if (/^(render_|google_drive_|dropbox_|episode_|storage_|publish_|caption_)[a-z0-9_]{1,110}$/.test(code)) return code;
   return "render_failed";
 };
 
@@ -98,7 +100,7 @@ const selectLatestBrandMedia = (
   kind: "show-intro-original" | "show-outro-original",
 ) => media.find((item) => item.assetKind === kind) ?? null;
 
-const validateBrandMedia = (file: GoogleDriveFileDownload, kind: string) => {
+const validateBrandMedia = (file: StudioFileDownload, kind: string) => {
   if (
     file.file.appProperties.assetKind !== kind ||
     file.file.appProperties.original !== "true" ||
@@ -184,10 +186,14 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
           if (!connection || connection.status !== "active") {
             throw new Error("render_storage_connection_unavailable");
           }
-          if (job.source_provider !== "google-drive" || connection.provider !== "google-drive") {
-            throw new Error("render_provider_not_supported");
+          if (connection.provider !== job.source_provider || show.storage_connection_id !== connection.id) {
+            throw new Error("render_storage_snapshot_mismatch");
+          }
+          if (connection.provider === "dropbox" && !(await isStorageAssetSchemaReady(db))) {
+            throw new Error("storage_asset_schema_not_ready");
           }
 
+          const storage = await createStudioStorageSession(this.env, db, job.user_id, connection);
           const artifactScope = {
             showId: show.id,
             showName: show.name,
@@ -195,20 +201,20 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
             renderJobId: job.id,
           } as const;
           const [existingTechnical, existingCaptions, existingMp3, existingMp4] = await Promise.all([
-            findGoogleDriveDerivedRenderOutput(this.env, job.user_id, connection, {
+            findDerivedRenderOutput(this.env, db, job.user_id, connection, {
               showId: show.id,
               showName: show.name,
               renderJobId: job.id,
             }),
-            findGoogleDriveEpisodePublishArtifact(this.env, job.user_id, connection, {
+            findEpisodePublishArtifact(this.env, db, job.user_id, connection, {
               ...artifactScope,
               assetKind: "final-captions-vtt",
             }),
-            findGoogleDriveEpisodePublishArtifact(this.env, job.user_id, connection, {
+            findEpisodePublishArtifact(this.env, db, job.user_id, connection, {
               ...artifactScope,
               assetKind: "final-podcast-mp3",
             }),
-            findGoogleDriveEpisodePublishArtifact(this.env, job.user_id, connection, {
+            findEpisodePublishArtifact(this.env, db, job.user_id, connection, {
               ...artifactScope,
               assetKind: "final-podcast-mp4",
             }),
@@ -240,10 +246,10 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
           if (!job) throw new Error("render_job_not_found");
           await setEpisodeRendering(this.env, job.user_id, job.episode_id);
 
-          const drive = await createGoogleDriveSession(this.env, job.user_id, connection);
-          const sourceMetadata = await drive.getOwnedFile(show.id, show.name, job.source_file_id);
+          const sourceMetadata = await storage.getOwnedFile(show.id, show.name, job.source_file_id);
           if (
             sourceMetadata.id !== job.source_file_id ||
+            sourceMetadata.provider !== job.source_provider ||
             sourceMetadata.appProperties.assetKind !== "original-recording" ||
             sourceMetadata.appProperties.immutable !== "true" ||
             sourceMetadata.sizeBytes !== episode.source_size_bytes
@@ -255,7 +261,7 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
           try {
             let technical = existingTechnical;
             if (technical) {
-              const download = await drive.downloadOwnedFile(show.id, show.name, technical.id);
+              const download = await storage.downloadOwnedFile(show.id, show.name, technical.id);
               if (
                 !download.body ||
                 download.file.appProperties.renderJobId !== job.id ||
@@ -266,12 +272,13 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
               }
               await container.importTechnicalMaster(download.body);
             } else {
-              const source = await drive.downloadOwnedFile(show.id, show.name, job.source_file_id);
+              const source = await storage.downloadOwnedFile(show.id, show.name, job.source_file_id);
               if (!source.body) throw new Error("render_source_body_missing");
               const rendered = await container.renderTechnicalMaster(source.body, plan.approvedEdits);
               const output = await container.streamTechnicalMaster();
-              technical = await uploadGoogleDriveDerivedRenderStream(
+              technical = await uploadDerivedRenderStream(
                 this.env,
+                db,
                 job.user_id,
                 connection,
                 {
@@ -297,8 +304,9 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
             });
             if (!job) throw new Error("render_job_not_found");
 
-            const timingArtifact = await findGoogleDriveEpisodePublishArtifact(
+            const timingArtifact = await findEpisodePublishArtifact(
               this.env,
+              db,
               job.user_id,
               connection,
               {
@@ -312,7 +320,7 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
             if (!timingArtifact || timingArtifact.mimeType !== "application/json") {
               throw new Error("caption_timing_artifact_not_found");
             }
-            const timingDownload = await drive.downloadOwnedFile(show.id, show.name, timingArtifact.id);
+            const timingDownload = await storage.downloadOwnedFile(show.id, show.name, timingArtifact.id);
             if (!timingDownload.body) throw new Error("caption_timing_artifact_not_found");
             const timingDocument = await readCaptionTimingDocument(timingDownload.body, timingArtifact.sizeBytes);
             if (
@@ -323,7 +331,7 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
               throw new Error("caption_timing_document_mismatch");
             }
 
-            const media = await listShowBrandMedia(this.env, job.user_id, connection, {
+            const media = await listStudioBrandMedia(this.env, db, job.user_id, connection, {
               showId: show.id,
               showName: show.name,
             });
@@ -335,14 +343,14 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
               if (!introRecord.sizeBytes || introRecord.sizeBytes > MAX_RENDER_BRAND_MEDIA_BYTES) {
                 throw new Error("render_intro_media_invalid");
               }
-              const download = await drive.downloadOwnedFile(show.id, show.name, introRecord.id);
+              const download = await storage.downloadOwnedFile(show.id, show.name, introRecord.id);
               introBody = validateBrandMedia(download, "show-intro-original");
             }
             if (outroRecord) {
               if (!outroRecord.sizeBytes || outroRecord.sizeBytes > MAX_RENDER_BRAND_MEDIA_BYTES) {
                 throw new Error("render_outro_media_invalid");
               }
-              const download = await drive.downloadOwnedFile(show.id, show.name, outroRecord.id);
+              const download = await storage.downloadOwnedFile(show.id, show.name, outroRecord.id);
               outroBody = validateBrandMedia(download, "show-outro-original");
             }
             const intro = await container.loadBrandMedia("intro", introBody);
@@ -355,8 +363,9 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
             );
             const finalVtt = buildWebVtt(transformedWords);
             const vttBytes = new TextEncoder().encode(finalVtt);
-            const captions = existingCaptions ?? await uploadGoogleDriveEpisodePublishArtifactBytes(
+            const captions = existingCaptions ?? await uploadEpisodePublishArtifactBytes(
               this.env,
+              db,
               job.user_id,
               connection,
               {
@@ -382,8 +391,9 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
               outro,
             });
 
-            const mp3 = existingMp3 ?? await uploadGoogleDriveEpisodePublishArtifactStream(
+            const mp3 = existingMp3 ?? await uploadEpisodePublishArtifactStream(
               this.env,
+              db,
               job.user_id,
               connection,
               {
@@ -394,8 +404,9 @@ export class PodcastRenderWorkflow extends WorkflowEntrypoint<RenderWorkflowEnv,
                 body: await container.streamFinalMp3(),
               },
             );
-            const mp4 = existingMp4 ?? await uploadGoogleDriveEpisodePublishArtifactStream(
+            const mp4 = existingMp4 ?? await uploadEpisodePublishArtifactStream(
               this.env,
+              db,
               job.user_id,
               connection,
               {

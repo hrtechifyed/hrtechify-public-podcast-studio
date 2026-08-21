@@ -299,7 +299,7 @@ export const handleDriveFileApi = async (
             identity.userId,
             show,
             connection,
-            result.file,
+            { ...result.file, provider: "google-drive" },
           );
           episodeTracking = "registered";
         } catch {
