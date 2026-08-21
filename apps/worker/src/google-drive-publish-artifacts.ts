@@ -10,6 +10,7 @@ const DRIVE_FILE_FIELDS = "id,name,mimeType,size,webViewLink,parents,appProperti
 export type EpisodePublishArtifactKind =
   | "source-captions-vtt"
   | "caption-word-timings"
+  | "derived-technical-master"
   | "final-captions-vtt"
   | "final-podcast-mp3"
   | "final-podcast-mp4";
@@ -17,6 +18,7 @@ export type EpisodePublishArtifactKind =
 const MIME_BY_KIND: Record<EpisodePublishArtifactKind, string> = {
   "source-captions-vtt": "text/vtt",
   "caption-word-timings": "application/json",
+  "derived-technical-master": "audio/flac",
   "final-captions-vtt": "text/vtt",
   "final-podcast-mp3": "audio/mpeg",
   "final-podcast-mp4": "video/mp4",
