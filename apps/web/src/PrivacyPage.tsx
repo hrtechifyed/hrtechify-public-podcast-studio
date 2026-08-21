@@ -99,8 +99,9 @@ export function PrivacyPage() {
 
         <PrivacySection title="Passwords and account recovery">
           <p>For email/password accounts, HRTechify does not store readable or reversible passwords. Passwords are processed with <strong>PBKDF2-HMAC-SHA256</strong>, a unique random salt and <strong>600,000 iterations</strong>; only the resulting hash material is stored.</p>
-          <p><strong>Password-only signup is immediate in the current zero-cost setup.</strong> The email address is stored as the account identifier, but HRTechify does not independently verify that you control that email address. If you want a verified-email identity, use Google Sign-In.</p>
+          <p><strong>Password-only signup is immediate in the current zero-cost setup.</strong> The email address is stored as the account identifier, but HRTechify does not independently verify that you control that email address. When creating a new account, Google Sign-In is the verified-email path.</p>
           <p>To prevent account takeover, password signup cannot claim an email address that is already attached to an existing Studio account or another sign-in method.</p>
+          <p><strong>Sign-in methods are not automatically merged by matching email text.</strong> Once an account has a password credential, Google Sign-In or an email sign-in link will not be silently joined to that password account. Use the account&apos;s existing password sign-in. A future cross-method link would require a separate explicit authenticated linking flow.</p>
           <p><strong>Password recovery by email is currently unavailable</strong> because no transactional-email service is configured. If you create a password-only account, keep the password safely. Recovery can be enabled later if a suitable free email-delivery path is configured.</p>
         </PrivacySection>
 
