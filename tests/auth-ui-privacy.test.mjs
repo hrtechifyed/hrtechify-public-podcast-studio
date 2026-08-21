@@ -5,6 +5,7 @@ import test from "node:test";
 const landing = await readFile(new URL("../apps/web/src/AuthLanding.tsx", import.meta.url), "utf8");
 const reset = await readFile(new URL("../apps/web/src/ResetPasswordPage.tsx", import.meta.url), "utf8");
 const privacy = await readFile(new URL("../apps/web/src/PrivacyPage.tsx", import.meta.url), "utf8");
+const usage = await readFile(new URL("../apps/web/src/UsagePage.tsx", import.meta.url), "utf8");
 const root = await readFile(new URL("../apps/web/src/Root.tsx", import.meta.url), "utf8");
 const main = await readFile(new URL("../apps/web/src/main.tsx", import.meta.url), "utf8");
 
@@ -59,7 +60,7 @@ test("privacy page explains separate narrow Drive authorization", () => {
   assert.match(privacy, /one explicitly assigned storage connection/);
 });
 
-test("privacy page documents password, session, token and media safeguards", () => {
+test("privacy page documents password, session, provider-token and local-media safeguards", () => {
   assert.match(privacy, /PBKDF2-HMAC-SHA256/);
   assert.match(privacy, /600,000 iterations/);
   assert.match(privacy, /single-use/);
@@ -69,7 +70,9 @@ test("privacy page documents password, session, token and media safeguards", () 
   assert.match(privacy, /SameSite=Lax/);
   assert.match(privacy, /refresh tokens are encrypted server-side/);
   assert.match(privacy, /Provider OAuth access tokens and provider upload-session details stay on the server/);
-  assert.match(privacy, /encrypted, user-bound capability token/);
+  assert.match(privacy, /Provider refresh tokens remain server-side and are never exposed to browser JavaScript/);
+  assert.match(privacy, /authenticated same-origin download routes/);
+  assert.match(privacy, /FFmpeg WebAssembly/);
 });
 
 test("privacy page is honest about originals, Cloudflare processing and deletion state", () => {
@@ -83,11 +86,22 @@ test("privacy page is honest about originals, Cloudflare processing and deletion
   assert.match(privacy, /Account deletion does not call Google Drive or Dropbox deletion APIs/);
 });
 
-test("root keeps privacy and reset inside the app and gates Studio on account state", () => {
+test("usage page explains the zero-bill local-processing contract in plain language", () => {
+  assert.match(usage, /Final generation runs on your device/);
+  assert.match(usage, /No paid server-rendering fallback/);
+  assert.match(usage, /processor, available memory, browser/);
+  assert.match(usage, /Keep the tab open/);
+  assert.match(usage, /rather than intentionally switching to paid overage/);
+  assert.match(usage, /Google Drive or Dropbox/);
+});
+
+test("root keeps privacy usage and reset inside the app and gates Studio on account state", () => {
   assert.match(root, /pathname === "\/privacy"/);
+  assert.match(root, /pathname === "\/usage"/);
   assert.match(root, /pathname === "\/reset-password"/);
   assert.match(root, /fetch\("\/api\/account"/);
   assert.match(root, /<PrivacyPage/);
+  assert.match(root, /<UsagePage/);
   assert.match(root, /<ResetPasswordPage/);
   assert.match(root, /<AuthLanding/);
   assert.match(root, /<App/);

@@ -21,9 +21,6 @@ import { applySecurityHeaders, enforceRequestSecurity, securityConfiguration } f
 import { handleStorageApi } from "./storage-api";
 import { handleStorageUploadCompatApi } from "./storage-upload-compat-api";
 
-export { PodcastRenderContainer, ContainerProxy } from "./render-container";
-export { PodcastRenderWorkflow } from "./render-workflow";
-
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body, null, 2), {
     status,
@@ -53,6 +50,8 @@ export default {
         maxActiveShowsPerUser: MAX_ACTIVE_SHOWS_PER_USER,
         platformCredit: PLATFORM_CREDIT,
         platformCreditPosition: PLATFORM_CREDIT_POSITION,
+        processingMode: "local-browser",
+        zeroBillMode: true,
         security: securityConfiguration,
       }));
     }

@@ -4,6 +4,7 @@ import { AuthLanding } from "./AuthLanding";
 import { DropboxStorageWorkspace } from "./DropboxStorageWorkspace";
 import { PrivacyPage } from "./PrivacyPage";
 import { ResetPasswordPage } from "./ResetPasswordPage";
+import { UsagePage } from "./UsagePage";
 
 type AccountState = "loading" | "authenticated" | "anonymous";
 
@@ -12,7 +13,7 @@ export function Root() {
   const [accountState, setAccountState] = useState<AccountState>("loading");
 
   useEffect(() => {
-    if (pathname === "/privacy" || pathname === "/reset-password") return;
+    if (pathname === "/privacy" || pathname === "/usage" || pathname === "/reset-password") return;
 
     let active = true;
     void fetch("/api/account", { credentials: "same-origin" })
@@ -30,6 +31,7 @@ export function Root() {
   }, [pathname]);
 
   if (pathname === "/privacy") return <PrivacyPage />;
+  if (pathname === "/usage") return <UsagePage />;
   if (pathname === "/reset-password") return <ResetPasswordPage />;
 
   if (accountState === "loading") {

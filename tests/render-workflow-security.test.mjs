@@ -7,17 +7,16 @@ const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), "
 const migration = read("database/migrations/0008_render_jobs.sql");
 const jobs = read("apps/worker/src/render-jobs.ts");
 const api = read("apps/worker/src/render-api.ts");
-const workflow = read("apps/worker/src/render-workflow.ts");
-const container = read("apps/worker/src/render-container.ts");
-const derived = read("apps/worker/src/storage-derived.ts");
+const publish = read("apps/worker/src/storage-publish-artifacts.ts");
 const storage = read("apps/worker/src/studio-storage.ts");
 const index = read("apps/worker/src/index.ts");
 const wrangler = read("apps/worker/wrangler.jsonc");
-const dockerfile = read("apps/worker/Dockerfile.render");
+const browserRenderer = read("apps/web/src/browser-renderer.ts");
 const ui = read("apps/web/src/RenderTechnicalMasterPanel.tsx");
 const privacy = read("apps/web/src/PrivacyPage.tsx");
+const workerPackage = read("apps/worker/package.json");
 
-test("render jobs are append-only snapshots with only one active job per episode", () => {
+test("render jobs remain append-only snapshots with only one active job per episode", () => {
   assert.match(migration, /CREATE TABLE IF NOT EXISTS episode_render_jobs/);
   assert.match(migration, /workflow_instance_id TEXT NOT NULL UNIQUE/);
   assert.match(migration, /idx_render_jobs_one_active_per_episode/);
@@ -27,87 +26,103 @@ test("render jobs are append-only snapshots with only one active job per episode
   assert.match(jobs, /sourceImmutable: true/);
 });
 
-test("render plan comes from stored approval decisions and fixed technical policy", () => {
+test("render plan still comes only from stored approval decisions and fixed technical policy", () => {
   assert.match(jobs, /listLatestEditorialProposals/);
   assert.match(jobs, /proposal\.decision === "apply"/);
   assert.match(jobs, /render_edit_decisions_incomplete/);
   assert.match(jobs, /createTechnicalCleanupPlan\(true\)/);
-  assert.doesNotMatch(api, /approvedEdits/);
-  assert.doesNotMatch(api, /technicalPlan/);
-  assert.doesNotMatch(api, /ffmpeg/i);
+  assert.match(jobs, /getSafeTemplateManifest/);
+  assert.match(jobs, /platformCredit:[\s\S]*required: true[\s\S]*removable: false/);
+  assert.doesNotMatch(api, /body\.approvedEdits|body\.technicalPlan|body\.filterGraph|body\.command/);
+});
+
+test("zero-bill deployment has no paid Container Workflow Durable Object or Media binding", () => {
+  const config = JSON.parse(wrangler);
+  assert.equal(config.containers, undefined);
+  assert.equal(config.workflows, undefined);
+  assert.equal(config.durable_objects, undefined);
+  assert.equal(config.media, undefined);
+  assert.doesNotMatch(workerPackage, /@cloudflare\/containers/);
+  assert.doesNotMatch(index, /PodcastRenderContainer|PodcastRenderWorkflow/);
 });
 
 test("render API is authenticated schema-gated and routed before generic Episode API", () => {
   assert.match(api, /requireVerifiedIdentity/);
   assert.match(api, /getEpisodeForUser\(db, identity\.userId, episodeId\)/);
   assert.match(api, /isRenderJobSchemaReady/);
-  assert.match(api, /env\.RENDER_WORKFLOW\.create/);
+  assert.match(api, /processingMode: "local-browser"/);
+  assert.match(api, /zeroBillMode: true/);
   const renderPosition = index.indexOf("handleRenderApi,");
   const episodePosition = index.indexOf("handleEpisodeApi,");
   assert.ok(renderPosition >= 0 && episodePosition > renderPosition);
 });
 
-test("render source is bounded before container disk use and reverified against the episode snapshot", () => {
-  assert.match(workflow, /MAX_RENDER_SOURCE_BYTES = 1024 \* 1024 \* 1024/);
-  assert.match(workflow, /episode\.source_size_bytes > MAX_RENDER_SOURCE_BYTES/);
-  assert.match(workflow, /render_source_too_large/);
-  assert.match(workflow, /sourceMetadata\.sizeBytes !== episode\.source_size_bytes/);
-  assert.match(workflow, /render_source_not_immutable_original/);
-  assert.match(workflow, /sourceMetadata\.provider !== job\.source_provider/);
+test("browser manifest is tied to the exact immutable source and assigned provider", () => {
+  assert.match(api, /episode\.source_immutable !== 1/);
+  assert.match(api, /episode\.source_file_id !== job\.source_file_id/);
+  assert.match(api, /episode\.source_storage_connection_id !== connection\.id/);
+  assert.match(api, /episode\.source_provider !== connection\.provider/);
+  assert.match(api, /show\.storage_connection_id !== connection\.id/);
+  assert.match(api, /downloadUrl\(connection, show, episode\.source_file_id\)/);
+  assert.match(api, /caption-word-timings/);
 });
 
-test("FFmpeg container has no public internet and uses direct fixed executable arguments", () => {
-  const config = JSON.parse(wrangler);
-  assert.equal(config.containers[0].class_name, "PodcastRenderContainer");
-  assert.equal(config.containers[0].instance_type, "basic");
-  assert.equal(config.containers[0].max_instances, 2);
-  assert.equal(config.workflows[0].class_name, "PodcastRenderWorkflow");
-  assert.match(container, /enableInternet = false/);
-  assert.match(container, /this\.start\(\{ enableInternet: false \}\)/);
-  assert.match(container, /this\.requireRuntime\(\)\.exec\(\["tee", path\]/);
-  assert.match(container, /"ffmpeg"/);
-  assert.doesNotMatch(container, /atempo=/);
-  assert.doesNotMatch(container, /asetrate=/);
-  assert.doesNotMatch(container, /rubberband=/);
-  assert.match(dockerfile, /apk add --no-cache ffmpeg/);
+test("browser renderer applies only approved cuts and fixed preservation rules", () => {
+  assert.match(browserRenderer, /manifest\.plan\.approvedEdits/);
+  assert.match(browserRenderer, /validateCuts/);
+  assert.match(browserRenderer, /preserveWords !== true/);
+  assert.match(browserRenderer, /preserveTiming !== true/);
+  assert.match(browserRenderer, /preservePitch !== true/);
+  assert.match(browserRenderer, /preserveSpeakingSpeed !== true/);
+  assert.match(browserRenderer, /loudnorm=I=\$\{manifest\.plan\.cleanup\.targetIntegratedLoudnessLkfs\}:TP=\$\{manifest\.plan\.cleanup\.maxTruePeakDbfs\}/);
+  assert.doesNotMatch(browserRenderer, /atempo=/);
+  assert.doesNotMatch(browserRenderer, /asetrate=/);
+  assert.doesNotMatch(browserRenderer, /rubberband=/);
 });
 
-test("container verifies timing and performs two-pass loudness and peak normalization", () => {
-  assert.match(container, /sourceDurationMs/);
-  assert.match(container, /approvedRemovedDurationMs/);
-  assert.match(container, /render_timing_integrity_failed/);
-  assert.match(container, /print_format=json/);
-  assert.match(container, /measured_I=/);
-  assert.match(container, /linear=true/);
-  assert.match(container, /LOUDNESS_TARGET = -16/);
-  assert.match(container, /TRUE_PEAK_TARGET = -1/);
+test("local renderer creates fixed FLAC WebVTT MP3 and H264 AAC MP4 outputs", () => {
+  assert.match(browserRenderer, /"technical\.flac"/);
+  assert.match(browserRenderer, /buildWebVtt/);
+  assert.match(browserRenderer, /libmp3lame/);
+  assert.match(browserRenderer, /"-b:a", "192k"/);
+  assert.match(browserRenderer, /libx264/);
+  assert.match(browserRenderer, /"yuv420p"/);
+  assert.match(browserRenderer, /"aac"/);
+  assert.match(browserRenderer, /1920:1080/);
+  assert.match(browserRenderer, /platformCredit\.text/);
 });
 
-test("derived technical output is immutable idempotent and provider-neutral", () => {
-  assert.match(derived, /findDerivedRenderOutput/);
-  assert.match(derived, /assetKind: "derived-technical-master"/);
-  assert.match(derived, /immutable: true/);
-  assert.match(derived, /sourceFileId: input\.sourceFileId/);
-  assert.match(derived, /renderJobId: input\.renderJobId/);
-  assert.match(derived, /connection\.provider === "google-drive"/);
-  assert.match(derived, /connection\.provider !== "dropbox"/);
-  assert.match(workflow, /assetKind !== "original-recording"/);
-  assert.match(workflow, /immutable !== "true"/);
+test("browser-created output upload is a fixed allowlist and is reverified before completion", () => {
+  assert.match(api, /derived-technical-master/);
+  assert.match(api, /final-captions-vtt/);
+  assert.match(api, /final-podcast-mp3/);
+  assert.match(api, /final-podcast-mp4/);
+  assert.match(api, /contentType !== spec\.mimeType/);
+  assert.match(api, /totalBytes > spec\.maxBytes/);
+  assert.match(api, /render_outputs_incomplete/);
+  assert.match(api, /technical\.mimeType !== "audio\/flac"/);
+  assert.match(api, /mp3\.mimeType !== "audio\/mpeg"/);
+  assert.match(api, /mp4\.mimeType !== "video\/mp4"/);
+  assert.match(publish, /immutable: true/);
+  assert.match(publish, /renderJobId/);
 });
 
-test("provider OAuth credentials stay in Worker code and never enter render container", () => {
-  assert.doesNotMatch(container, /GOOGLE_DRIVE_CLIENT|DROPBOX_CLIENT|TOKEN_ENCRYPTION_KEY/);
-  assert.doesNotMatch(container, /googleapis\.com|dropboxapi\.com/);
-  assert.match(workflow, /createStudioStorageSession/);
-  assert.match(workflow, /uploadDerivedRenderStream/);
+test("provider OAuth credentials stay server-side while browser uses same-origin file routes", () => {
   assert.match(storage, /requireDropboxAssetRecord/);
-  assert.match(privacy, /OAuth credentials and provider upload-session details remain Worker-side and are never passed into the container/);
+  assert.doesNotMatch(api, /refresh_token_encrypted|GOOGLE_DRIVE_CLIENT_SECRET|DROPBOX_CLIENT_SECRET|TOKEN_ENCRYPTION_KEY/);
+  assert.doesNotMatch(browserRenderer, /refresh_token|GOOGLE_DRIVE_CLIENT|DROPBOX_CLIENT|TOKEN_ENCRYPTION_KEY/);
+  assert.match(browserRenderer, /fetch\(asset\.downloadUrl, \{ credentials: "same-origin"/);
+  assert.match(privacy, /Provider refresh tokens remain server-side and are never exposed to browser JavaScript/);
 });
 
-test("UI requires explicit render confirmation and sends no processing plan from the browser", () => {
+test("generation requires the explicit on-device performance notice before processing", () => {
+  assert.match(ui, /Generation happens on this device/);
+  assert.match(ui, /Final processing will run on your computer, not on HRTechify&apos;s servers/);
+  assert.match(ui, /Speed depends on your computer, available memory and browser/);
+  assert.match(ui, /Keep this tab open until it finishes/);
+  assert.match(ui, /Continue generation/);
+  assert.match(ui, /Cancel/);
   assert.match(ui, /Create final MP3 \+ MP4/);
-  assert.match(ui, /method: "POST"/);
-  assert.doesNotMatch(ui, /body: JSON\.stringify/);
   assert.match(ui, /Only edit ranges you explicitly marked/);
   assert.match(ui, /original recording is never overwritten or replaced/);
 });

@@ -13,6 +13,7 @@ import type { StorageConnectionRow } from "./storage-store";
 const MIME_BY_KIND: Record<EpisodePublishArtifactKind, string> = {
   "source-captions-vtt": "text/vtt",
   "caption-word-timings": "application/json",
+  "derived-technical-master": "audio/flac",
   "final-captions-vtt": "text/vtt",
   "final-podcast-mp3": "audio/mpeg",
   "final-podcast-mp4": "video/mp4",

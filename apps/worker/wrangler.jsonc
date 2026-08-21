@@ -26,38 +26,6 @@
   "ai": {
     "binding": "AI"
   },
-  "media": {
-    "binding": "MEDIA"
-  },
-  "workflows": [
-    {
-      "name": "hrtechify-podcast-render",
-      "binding": "RENDER_WORKFLOW",
-      "class_name": "PodcastRenderWorkflow"
-    }
-  ],
-  "containers": [
-    {
-      "class_name": "PodcastRenderContainer",
-      "image": "./Dockerfile.render",
-      "max_instances": 2,
-      "instance_type": "basic"
-    }
-  ],
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "RENDER_CONTAINER",
-        "class_name": "PodcastRenderContainer"
-      }
-    ]
-  },
-  "migrations": [
-    {
-      "tag": "render-container-v1",
-      "new_sqlite_classes": ["PodcastRenderContainer"]
-    }
-  ],
   "assets": {
     "directory": "../web/dist",
     "not_found_handling": "single-page-application",
