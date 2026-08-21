@@ -159,12 +159,20 @@ const finishGoogle = async (request: Request, env: WorkerEnv) => {
     return redirect(errorDestination(request, env, "google_identity_invalid"));
   }
 
-  const user = await findOrCreateUserForProvider(
-    db,
-    "google",
-    profile.sub,
-    profile.email,
-  );
+  let user;
+  try {
+    user = await findOrCreateUserForProvider(
+      db,
+      "google",
+      profile.sub,
+      profile.email,
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message === "unverified_password_email_conflict") {
+      return redirect(errorDestination(request, env, "google_password_account_conflict"));
+    }
+    throw error;
+  }
 
   if (user.status !== "active") {
     return redirect(errorDestination(request, env, "account_not_active"));
@@ -238,12 +246,20 @@ const finishEmail = async (request: Request, env: WorkerEnv) => {
     return redirect(errorDestination(request, env, "magic_link_invalid_or_expired"));
   }
 
-  const user = await findOrCreateUserForProvider(
-    db,
-    "email",
-    normalizeEmail(magicLink.email),
-    magicLink.email,
-  );
+  let user;
+  try {
+    user = await findOrCreateUserForProvider(
+      db,
+      "email",
+      normalizeEmail(magicLink.email),
+      magicLink.email,
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message === "unverified_password_email_conflict") {
+      return redirect(errorDestination(request, env, "email_password_account_conflict"));
+    }
+    throw error;
+  }
 
   if (user.status !== "active") {
     return redirect(errorDestination(request, env, "account_not_active"));
