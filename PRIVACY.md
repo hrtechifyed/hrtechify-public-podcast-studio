@@ -1,57 +1,54 @@
 # Privacy
 
-HRTechify Public Podcast Studio is being designed around a simple principle: **the creator's media should remain under the creator's control**.
+HRTechify Public Podcast Studio is designed around a simple principle: **the creator's media should remain under the creator's control**.
 
-This document describes the intended product privacy model. It is not a substitute for the final legally reviewed Privacy Policy that must be published before production launch.
+This repository document describes the product privacy model. It is not a substitute for a legally reviewed Privacy Policy where one is required for production use.
 
 ## What belongs to the user
 
-The user's original recordings, show assets and final podcast outputs are intended to remain in the cloud storage destination selected by the user.
+Original recordings, show assets and completed podcast outputs remain in the Google Drive or Dropbox destination assigned by the user. HRTechify does not require a permanent central media library for all creators.
 
-The platform should not require one permanent central HRTechify media library for all creators.
+The original recording is immutable. Processing creates separate derived files rather than overwriting the source.
 
-## What the platform may store
+## What HRTechify stores
 
-The application may retain limited account and operational information required to provide the service, such as:
+D1 may store limited account and operational information needed to run the Studio, including account identity, show and episode metadata, storage connection metadata, provider file identifiers, template choices, edit proposals and decisions, render-job state and output references.
 
-- Account identity and sign-in metadata
-- Show and episode metadata
-- Storage connection metadata
-- Provider file identifiers and paths
-- Selected template/version
-- Edit proposals and user decisions
-- Job state and output references
-- Usage and security/audit events
+Google Drive and Dropbox refresh credentials are encrypted at rest. Provider refresh tokens and raw provider upload credentials are not sent to browser JavaScript.
 
-OAuth refresh credentials required for background processing must be encrypted at rest and revocable.
+## Final generation happens on the user's device
 
-## What happens to voice recordings
+Heavy final audio/video generation runs in the user's browser using FFmpeg WebAssembly. The browser downloads only the authenticated source and supporting files belonging to the signed-in user and assigned show storage connection.
 
-The original recording is preserved and must not be overwritten by processing.
+Temporary working media exists in browser memory and the local WebAssembly file system for the generation session. HRTechify does not use a paid Cloudflare Container or paid server-render farm for final MP3/MP4 generation.
 
-When processing is required, the platform may temporarily access or stage media to analyse audio, prepare proposed edits, master audio, generate captions and render the final video.
+Generation speed depends on the user's processor, available memory, browser and episode length. Closing the tab or suspending the device can interrupt local generation.
 
-Temporary processing media must be deleted after completion, cancellation or a short defined expiry period.
+Completed technical-master, WebVTT, MP3 and MP4 files are streamed back into the user's assigned Google Drive or Dropbox as separate immutable outputs. If saving back to storage fails, locally generated files may remain available for direct download during that browser session.
+
+## FFmpeg runtime download
+
+The browser downloads a pinned FFmpeg WebAssembly runtime from jsDelivr when final generation begins. That request downloads program code only. Podcast recordings, caption timing, technical masters and final outputs are not sent to jsDelivr.
+
+## Free-use / no paid-rendering rule
+
+The production architecture is intentionally designed around free-tier services and on-device final generation. If an available free allowance or platform limit is reached, the affected feature should fail clearly, pause or become temporarily unavailable rather than intentionally switching to paid server processing.
+
+Optional Workers AI analysis and Cloudflare Images background removal remain subject to the available free-plan capacity. Paid Cloudflare Containers and Media Transformations are not part of the zero-bill final-generation deployment configuration.
+
+See `USAGE_POLICY.md` for the plain-language usage rule.
 
 ## Spoken-content changes
 
-Technical audio cleanup may be performed automatically where it does not change the speaker's words.
-
-Any proposed edit that removes or materially changes spoken content requires explicit user approval before it is applied.
+Technical cleanup may be performed automatically only where it does not change the speaker's words. Any proposed edit that removes or materially changes spoken content requires explicit user approval before it is applied.
 
 ## Logo background removal
 
-If a user uploads a logo, the studio may offer to create a transparent-background version. The user must be asked before this transformation is performed, the original must be preserved, and the user chooses which version to use.
-
-## Storage choice
-
-Initial supported permanent storage destinations are planned to be Google Drive and Dropbox. A show is linked to an active storage destination selected by the user.
+If a user requests background removal, the original image is preserved and the generated transparent-background candidate remains separate. The user chooses Accept, Retry or Keep Original.
 
 ## Account deletion and disconnection
 
-The product should support disconnecting storage providers and deleting the user's platform account. Provider credentials and platform metadata should be removed according to the applicable retention policy.
-
-Files that belong to the user in their own cloud storage remain there unless the user explicitly asks the application to remove them and the provider permissions allow that action.
+Self-service account deletion removes HRTechify account/authentication/workflow metadata and encrypted storage credentials. Files already stored in the user's Google Drive or Dropbox are intentionally preserved; the Studio does not call provider deletion APIs as part of account deletion.
 
 ## Voice and recording rights
 
@@ -60,7 +57,3 @@ Users are responsible for ensuring they have the necessary rights and consent to
 ## Public source code does not mean public user data
 
 This GitHub repository is public. Production secrets, OAuth tokens, personal user information, recordings, transcripts and private media must never be committed to the repository.
-
-## Before public launch
-
-The hosted product must publish a legally reviewed Privacy Policy and Terms of Use, define specific retention periods, document subprocessors where required, and provide appropriate contact and deletion mechanisms.
