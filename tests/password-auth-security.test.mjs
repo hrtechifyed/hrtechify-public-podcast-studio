@@ -67,12 +67,25 @@ test("unverified password identities cannot absorb later verified Google or emai
   assert.match(usersSource, /const passwordIdentitySubject = \(email: string\) => `password:\$\{normalizeEmail\(email\)\}`/);
   assert.match(usersSource, /hasUnverifiedPasswordBoundary/);
   assert.match(usersSource, /FROM auth_password_credentials/);
+  assert.match(usersSource, /FROM auth_password_verifications/);
+  assert.match(usersSource, /consumed_at IS NOT NULL/);
   assert.match(usersSource, /subject = \?/);
   assert.match(usersSource, /throw new Error\("unverified_password_email_conflict"\)/);
   assert.match(authSource, /google_password_account_conflict/);
   assert.match(authSource, /email_password_account_conflict/);
   assert.match(authUiSource, /Google cannot be linked automatically because password-only email ownership is not verified/);
   assert.match(authUiSource, /params\.get\("auth"\) === "error"/);
+});
+
+test("legacy immediate password identities are checked before an email identity is accepted as linked", () => {
+  const linkedLookup = usersSource.indexOf("const linked = await db");
+  const linkedBoundary = usersSource.indexOf("linked &&\n    provider === \"email\"");
+  const linkedReturn = usersSource.indexOf("if (linked) {", linkedLookup);
+
+  assert.ok(linkedLookup >= 0, "linked identity lookup must exist");
+  assert.ok(linkedBoundary > linkedLookup, "legacy password boundary must be evaluated after the linked row is known");
+  assert.ok(linkedReturn > linkedBoundary, "legacy password boundary must be evaluated before accepting the linked email identity");
+  assert.match(usersSource, /Genuine legacy[\s\S]*consumed verification record/);
 });
 
 test("password signup cannot leave a user stranded when credential setup fails", () => {
