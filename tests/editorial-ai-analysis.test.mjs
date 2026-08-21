@@ -4,17 +4,16 @@ import test from "node:test";
 
 const analysis = await readFile(new URL("../apps/worker/src/editorial-analysis.ts", import.meta.url), "utf8");
 const api = await readFile(new URL("../apps/worker/src/editorial-edits-api.ts", import.meta.url), "utf8");
-const db = await readFile(new URL("../apps/worker/src/db.ts", import.meta.url), "utf8");
 const storage = await readFile(new URL("../apps/worker/src/studio-storage.ts", import.meta.url), "utf8");
 const wrangler = await readFile(new URL("../apps/worker/wrangler.jsonc", import.meta.url), "utf8");
 const approvalUi = await readFile(new URL("../apps/web/src/EditorialApprovalPanel.tsx", import.meta.url), "utf8");
 const privacy = await readFile(new URL("../apps/web/src/PrivacyPage.tsx", import.meta.url), "utf8");
 
-test("Workers AI and Media bindings are configured without adding secrets", () => {
+test("Workers AI remains available but billable Media Transformations are not configured", () => {
   assert.match(wrangler, /"ai"\s*:\s*\{\s*"binding"\s*:\s*"AI"/s);
-  assert.match(wrangler, /"media"\s*:\s*\{\s*"binding"\s*:\s*"MEDIA"/s);
-  assert.match(db, /AI\?: AiBindingLike/);
-  assert.match(db, /MEDIA\?: MediaBindingLike/);
+  assert.doesNotMatch(wrangler, /"media"\s*:/);
+  assert.doesNotMatch(wrangler, /"containers"\s*:/);
+  assert.doesNotMatch(wrangler, /"workflows"\s*:/);
   assert.doesNotMatch(wrangler, /CLOUDFLARE_API_TOKEN|AI_API_KEY|MEDIA_API_KEY/);
 });
 
@@ -48,9 +47,10 @@ test("Whisper timing output is validated before detectors use it", () => {
   assert.match(analysis, /analysis_transcript_timestamps_missing/);
 });
 
-test("video analysis extracts audio through Media Transformations and never returns transformed media", () => {
-  assert.match(analysis, /env\.MEDIA\.input\(body\)\.output\(\{ mode: "audio" \}\)\.response\(\)/);
+test("video-analysis Media fallback cannot run in the zero-bill production configuration", () => {
   assert.match(analysis, /mimeType\.startsWith\("video\/"\)/);
+  assert.match(analysis, /if \(!env\.MEDIA\) throw new EditorialAnalysisError\("media_binding_not_configured", 503\)/);
+  assert.doesNotMatch(wrangler, /"binding"\s*:\s*"MEDIA"/);
   assert.doesNotMatch(api, /audioBytes|transformedMedia|transcriptText/);
 });
 
@@ -93,13 +93,13 @@ test("approval UI makes analysis explicit and preserves the existing approval ba
   assert.match(approvalUi, /Neither decision overwrites, trims or replaces/);
 });
 
-test("privacy page discloses Workers AI analysis and storage-persisted caption timing", () => {
+test("privacy page discloses Workers AI analysis, stored caption timing and disabled paid media path", () => {
   assert.match(privacy, /Podcast transcription, captions and edit analysis/);
   assert.match(privacy, /Analyze original recording/);
   assert.match(privacy, /Cloudflare Workers AI/);
-  assert.match(privacy, /Cloudflare Media Transformations/);
-  assert.match(privacy, /D1 does not store the transcript text/);
-  assert.match(privacy, /exact recognized word tokens\/timestamps/);
+  assert.match(privacy, /Media Transformations are not part of the zero-bill production configuration/);
+  assert.match(privacy, /D1 does not store transcript text/);
+  assert.match(privacy, /Exact recognized word tokens\/timestamps/);
   assert.match(privacy, /saved as separate immutable files in the episode&apos;s assigned storage/);
-  assert.match(privacy, /unrelated to Gmail/);
+  assert.match(privacy, /does not request Gmail permissions/);
 });
