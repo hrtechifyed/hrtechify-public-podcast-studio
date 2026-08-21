@@ -19,13 +19,14 @@ const friendlyError = (code?: string) => {
     case "valid_email_required": return "Enter a valid email address.";
     case "password_too_short": return "Use a password of at least 12 characters.";
     case "password_too_long": return "Use a password of 128 characters or fewer.";
-    case "account_already_has_password": return "This email already has a password. Sign in or use Forgot password.";
+    case "account_already_has_password": return "This email already has a password. Sign in instead.";
+    case "account_uses_other_signin": return "This email is already attached to another sign-in method. Use Continue with Google for that account.";
     case "invalid_email_or_password": return "The email or password is incorrect.";
     case "too_many_attempts": return "Too many attempts. Try again later.";
     case "email_delivery_failed": return "The account email could not be sent right now. Try again later.";
-    case "password_signup_not_configured": return "Account creation is temporarily unavailable because verification email delivery is not configured yet.";
+    case "password_signup_not_configured": return "Password account creation is not enabled for this deployment yet.";
     case "password_signin_not_configured": return "Password sign-in is not enabled for this deployment yet.";
-    case "password_reset_not_configured": return "Password recovery is not enabled for this deployment yet.";
+    case "password_reset_not_configured": return "Password recovery by email is not available in this zero-cost setup yet.";
     case "password_schema_not_ready": return "Account creation is temporarily unavailable while the account database is being prepared.";
     default: return code || "The request could not be completed.";
   }
@@ -97,7 +98,7 @@ export function AuthLanding() {
         setError(
           config === null
             ? "Account setup is still being checked. Try again in a moment."
-            : "Account creation is temporarily unavailable because verification email delivery is not configured yet.",
+            : "Password account creation is not enabled for this deployment yet.",
         );
         return;
       }
@@ -109,7 +110,7 @@ export function AuthLanding() {
     }
 
     if (mode === "forgot" && !passwordEnabled) {
-      setError(config === null ? "Password recovery setup is still being checked. Try again in a moment." : "Password recovery is not enabled for this deployment yet.");
+      setError(config === null ? "Password recovery setup is still being checked. Try again in a moment." : "Password recovery by email is not available in this zero-cost setup yet.");
       return;
     }
 
@@ -122,9 +123,13 @@ export function AuthLanding() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ email, password }),
         });
-        const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+        const payload = await response.json().catch(() => null) as { error?: string; message?: string; redirectTo?: string } | null;
         if (!response.ok) throw new Error(friendlyError(payload?.error));
-        setNotice(payload?.message ?? "Check your email to verify your account.");
+        if (payload?.redirectTo) {
+          window.location.assign(payload.redirectTo);
+          return;
+        }
+        setNotice(payload?.message ?? "Account created.");
         return;
       }
 
@@ -193,10 +198,10 @@ export function AuthLanding() {
           <h2>{mode === "signup" ? "Create your Studio account" : mode === "signin" ? "Sign in to your Studio" : "Forgot your password?"}</h2>
           <p className="muted">
             {mode === "signup"
-              ? "We verify your email before a password account becomes active."
+              ? "Password sign-up creates the account immediately. The email is your account identifier, but its ownership is not independently verified in this zero-cost setup."
               : mode === "signin"
                 ? "Use your email and password, or continue with Google."
-                : "Enter your email. The response will not reveal whether an account exists."}
+                : "Password recovery by email is available only when transactional email delivery is configured."}
           </p>
 
           {notice && <div className="notice success">{notice}</div>}
@@ -236,7 +241,8 @@ export function AuthLanding() {
                     At least 12 characters. No forced symbol or capitalization pattern.<br />
                     <strong>Acceptable example:</strong> <code>Riverstone2026</code><br />
                     <strong>Not acceptable:</strong> <code>hello123</code> — fewer than 12 characters.<br />
-                    Examples only — choose your own password.
+                    Examples only — choose your own password.<br />
+                    <strong>Important:</strong> password recovery by email is not currently available, so keep your password safely.
                   </span>
                 )}
               </label>
@@ -254,7 +260,12 @@ export function AuthLanding() {
             </button>
           </form>
 
-          {mode === "signin" && <button type="button" className="text-button" onClick={() => switchMode("forgot")} disabled={busy}>Forgot password?</button>}
+          {mode === "signin" && config?.providers.password?.recovery === true && (
+            <button type="button" className="text-button" onClick={() => switchMode("forgot")} disabled={busy}>Forgot password?</button>
+          )}
+          {mode === "signin" && config && config.providers.password?.recovery !== true && (
+            <p className="setup-hint">Password reset by email is not available in this zero-cost setup yet. If you use password sign-in, keep your password safely.</p>
+          )}
           {mode === "forgot" && <button type="button" className="text-button" onClick={() => switchMode("signin")} disabled={busy}>Back to Sign In</button>}
 
           <p className="signin-footnote">By continuing, you can review how account, media and Google permissions are handled in <a href="/privacy">Privacy</a>.</p>

@@ -33,6 +33,12 @@ export function UsagePage() {
           </div>
         </section>
 
+        <Rule title="Password signup in the zero-cost setup">
+          <p>Password-only accounts are created immediately after the email and password pass validation. No verification email is sent because transactional email is not currently configured.</p>
+          <p>The email address is used as the account identifier but is not independently verified. Google Sign-In remains the option for users who want a verified-email identity.</p>
+          <p>Password signup cannot take over an email address already attached to an existing Studio account. Password recovery by email is not currently available, so password-only users should keep their password safely.</p>
+        </Rule>
+
         <Rule title="Final generation runs on your device">
           <p>When you create the final podcast, your browser downloads the source and approved supporting files from the storage account you connected, then processes them locally on your computer.</p>
           <p><strong>Your computer does the heavy work.</strong> Generation speed therefore depends on your processor, available memory, browser and the length of the episode. Keep the tab open until generation finishes.</p>

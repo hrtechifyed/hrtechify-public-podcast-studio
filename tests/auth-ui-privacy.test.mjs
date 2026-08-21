@@ -25,11 +25,13 @@ test("signup button stays actionable and password guidance is concrete", () => {
   assert.match(landing, /Not acceptable:/);
   assert.match(landing, /hello123/);
   assert.match(landing, /fewer than 12 characters/);
-  assert.match(landing, /Account creation is temporarily unavailable because verification email delivery is not configured yet/);
+  assert.match(landing, /Password sign-up creates the account immediately/);
+  assert.match(landing, /not independently verified/);
+  assert.match(landing, /password recovery by email is not currently available/i);
   assert.doesNotMatch(landing, /disabled=\{busy \|\| !passwordEnabled\}/);
 });
 
-test("returning users have forgot-password recovery and secure reset route", () => {
+test("recovery route remains present for future transactional-email configuration", () => {
   assert.match(landing, /Forgot password\?/);
   assert.match(landing, /\/api\/auth\/password\/forgot/);
   assert.match(reset, /Set new password/);
@@ -53,13 +55,16 @@ test("home contains an in-product privacy section rather than only an external d
   assert.doesNotMatch(landing, /github\.com[^\n]*PRIVACY/);
 });
 
-test("full privacy page distinguishes verified email identity from Gmail content access", () => {
+test("full privacy page distinguishes verified Google identity from password-only identity", () => {
   assert.match(privacy, /openid email/);
   assert.match(privacy, /Seeing your email address is not the same as reading your email/);
   assert.match(privacy, /does not request Gmail permissions/);
   assert.match(privacy, /Google Contacts/);
   assert.match(privacy, /Google Calendar/);
   assert.match(privacy, /profile/);
+  assert.match(privacy, /Password-only signup is immediate/);
+  assert.match(privacy, /does not independently verify/);
+  assert.match(privacy, /cannot claim an email address that is already attached/);
 });
 
 test("privacy page explains separate narrow Drive authorization", () => {
@@ -74,8 +79,7 @@ test("privacy page explains separate narrow Drive authorization", () => {
 test("privacy page documents password, session, provider-token and local-media safeguards", () => {
   assert.match(privacy, /PBKDF2-HMAC-SHA256/);
   assert.match(privacy, /600,000 iterations/);
-  assert.match(privacy, /single-use/);
-  assert.match(privacy, /SHA-256 hash/);
+  assert.match(privacy, /Password recovery by email is currently unavailable/);
   assert.match(privacy, /HttpOnly/);
   assert.match(privacy, /Secure/);
   assert.match(privacy, /SameSite=Lax/);
@@ -97,7 +101,11 @@ test("privacy page is honest about originals, Cloudflare processing and deletion
   assert.match(privacy, /Account deletion does not call Google Drive or Dropbox deletion APIs/);
 });
 
-test("usage page explains the zero-bill local-processing contract in plain language", () => {
+test("usage page explains the zero-bill local-processing and password-account contract", () => {
+  assert.match(usage, /Password signup in the zero-cost setup/);
+  assert.match(usage, /No verification email is sent/);
+  assert.match(usage, /not independently verified/);
+  assert.match(usage, /Password recovery by email is not currently available/);
   assert.match(usage, /Final generation runs on your device/);
   assert.match(usage, /No paid server-rendering fallback/);
   assert.match(usage, /processor, available memory, browser/);
