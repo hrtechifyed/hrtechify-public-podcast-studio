@@ -1,96 +1,61 @@
 # How HRTechify Public Podcast Studio Works
 
-This document explains the product flow in plain language. It is intended to remain aligned with the user-facing **How It Works** section inside the application.
+This explains the product flow in plain language.
 
 ## 1. Account and shows
 
-A user creates one HRTechify Podcast Studio account. Each account may have up to **5 active shows**.
-
-Each show is a separate workspace with its own:
-
-- Show name
-- Host name
-- Logo
-- Optional transparent-logo variant
-- Profile picture
-- Intro and outro
-- Preferred template
-- Storage destination
-- Episodes and outputs
-
-A user may delete or archive a show and then create another, provided the number of active shows does not exceed five.
+A user creates one Studio account and may have up to **5 active shows**. Each show keeps its own name, host name, branding, intro/outro, template, storage destination and episodes.
 
 ## 2. Choose storage
 
-The user connects an approved storage provider. Initial support is planned for Google Drive and Dropbox.
-
-The user may choose a storage destination per show. Permanent podcast media should live in user-owned storage rather than one shared HRTechify media library.
+The user connects Google Drive or Dropbox separately from sign-in and assigns one storage connection to a show. Permanent podcast media lives in that user-owned storage rather than one shared HRTechify media library.
 
 ## 3. Set up show branding
 
-The user uploads their logo and other show assets. When a logo has a solid or unwanted background, the studio asks whether the user wants a transparent-background version created.
+The user uploads logo/profile assets and optional intro/outro media. Originals remain unchanged. If background removal is requested, the user sees the result before choosing Accept, Retry or Keep Original.
 
-The original is always preserved. The user previews the result and chooses whether to use the original or processed version.
+## 4. Record or upload an episode
 
-## 4. Create an episode
+The user can record in the browser or upload a supported file. The accepted source is stored as an immutable original in the show's assigned storage.
 
-The user selects a show and creates an episode. The episode inherits show-level branding and host details, while episode-specific data such as the episode name is entered for that production.
+## 5. Analyse and propose edits
 
-Before rendering, the exact Show Name, Episode Name, Host Name, logo and template are shown for confirmation.
+When analysis is available and the user requests it, the Studio can propose clear accidental speech/timing edits such as a false start, repeated speech, fumble or unusual pause. The proposal does not alter the source.
 
-## 5. Record or upload audio
+## 6. User approval
 
-Users may either:
+Every spoken-content or timing proposal must receive an explicit decision. Only ranges marked **Apply in final edit** may be removed. **Keep Original** preserves that part of the recording.
 
-- **Record directly in the browser**, or
-- **Upload an existing audio file**.
+## 7. Lock the final plan
 
-The browser recorder is planned to support microphone selection, input level indication, record, pause, resume, stop, preview, record again and recovery of unfinished recording chunks where technically possible.
+Before generation, the Studio snapshots the exact source, completed analysis run, approved edit ranges, technical-cleanup rules, show name, episode name, host name, selected curated template, caption choice and mandatory **Powered by HRTechify** credit.
 
-## 6. Preserve the original
+## 8. Final generation happens on the user's device
 
-The source recording is treated as immutable. The production pipeline must not overwrite it.
+When the user clicks generation, a short message explains that the heavy processing will run on that computer rather than on HRTechify's servers.
 
-Once the user accepts the recording or upload, the original is saved to the user's selected storage and referenced by the application.
+The browser downloads the exact authenticated source and supporting files from the user's assigned Drive/Dropbox and loads a pinned FFmpeg WebAssembly runtime. It then performs the approved cuts, fixed technical mastering, caption-timeline transformation, MP3 creation and MP4 creation locally.
 
-## 7. Analyse and refine
+**Speed depends on the user's processor, available memory, browser and episode length. Keep the tab open until generation finishes.**
 
-Technical audio processing may include noise/hum reduction, click control, level balancing, compression, de-essing, plosive control and peak protection.
+HRTechify does not use a paid Cloudflare Container or paid server-rendering fallback for this final generation step.
 
-Speech or timing changes that would remove or materially alter spoken content are handled differently. The system may propose edits for issues such as false starts, repeated speech, unusual pauses or fumbles, but the user decides whether each proposal is applied.
+## 9. Preserve content integrity
 
-## 8. User approval
+The original remains unchanged. Outside approved edit ranges, technical processing preserves words, pitch and speaking speed. The final video uses an approved HRTechify template and keeps **Powered by HRTechify** as a non-removable platform credit.
 
-The user reviews meaningful speech/timing proposals and chooses to apply or keep the original content.
+## 10. Save outputs back to the user
 
-Only approved spoken-content changes proceed to the final production.
+The browser creates separate technical-master FLAC, WebVTT, MP3 and MP4 outputs. The Studio then streams those generated files through authenticated provider-neutral routes into the same assigned Google Drive or Dropbox without exposing provider refresh tokens to browser JavaScript.
 
-## 9. Final render confirmation
+If saving to connected storage fails, the locally generated files may still be offered for direct download during that browser session. The immutable source is not affected.
 
-Immediately before rendering, the application displays the locked production configuration, including:
+## 11. Free-use behavior
 
-- Show Name
-- Episode Name
-- Host Name
-- Selected logo
-- Selected template
-- Storage destination
-- Mandatory **Podcast Powered by HRTechify** footer
+The hosted architecture is deliberately based on free-tier platform services plus on-device final generation. If a free service allowance or platform limit is reached, the relevant feature should stop clearly or become temporarily unavailable instead of intentionally switching to paid server processing.
 
-Once confirmed, the episode uses a snapshot of these values so later show-profile changes do not silently alter that render.
-
-## 10. Produce the podcast
-
-The production pipeline creates mastered audio and the final podcast video. Depending on the chosen template, the video may include creator logo, profile picture, waveform, captions and other approved visual elements.
-
-Every generated podcast video must display **Podcast Powered by HRTechify** in the bottom-right corner throughout the platform-generated episode body. Templates must reserve a safe area for this credit.
-
-## 11. Return outputs to the user
-
-Final outputs are written to the user's selected cloud storage. The application keeps only the metadata and references required to show episode status, history and links.
-
-Temporary processing media is deleted according to the retention policy after completion, cancellation or expiry.
+See `USAGE_POLICY.md` for the full plain-language usage rule.
 
 ## 12. Returning users
 
-Returning users select an existing show or create another one within the five-show limit. Saved show assets and preferences can be reused, while each new episode receives its own locked production snapshot.
+Returning users select an existing show or create another within the five-show limit. Saved show assets and preferences can be reused, while each episode keeps its own locked production snapshot.
