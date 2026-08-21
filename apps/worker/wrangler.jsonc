@@ -26,6 +26,16 @@
   "ai": {
     "binding": "AI"
   },
+  "migrations": [
+    {
+      "tag": "render-container-v1",
+      "new_sqlite_classes": ["PodcastRenderContainer"]
+    },
+    {
+      "tag": "render-container-v2-delete",
+      "deleted_classes": ["PodcastRenderContainer"]
+    }
+  ],
   "assets": {
     "directory": "../web/dist",
     "not_found_handling": "single-page-application",
