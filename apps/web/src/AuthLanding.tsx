@@ -21,6 +21,8 @@ const friendlyError = (code?: string) => {
     case "password_too_long": return "Use a password of 128 characters or fewer.";
     case "account_already_has_password": return "This email already has a password. Sign in instead.";
     case "account_uses_other_signin": return "This email is already attached to another sign-in method. Use Continue with Google for that account.";
+    case "google_password_account_conflict": return "This email is already registered with password sign-in. Google cannot be linked automatically because password-only email ownership is not verified. Sign in with your password instead.";
+    case "email_password_account_conflict": return "This email is already registered with password sign-in and cannot be linked automatically to an email sign-in link.";
     case "invalid_email_or_password": return "The email or password is incorrect.";
     case "too_many_attempts": return "Too many attempts. Try again later.";
     case "email_delivery_failed": return "The account email could not be sent right now. Try again later.";
@@ -30,6 +32,13 @@ const friendlyError = (code?: string) => {
     case "password_schema_not_ready": return "Account creation is temporarily unavailable while the account database is being prepared.";
     default: return code || "The request could not be completed.";
   }
+};
+
+const callbackError = () => {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("auth") === "error"
+    ? friendlyError(params.get("reason") ?? undefined)
+    : null;
 };
 
 export function AuthLanding() {
@@ -45,7 +54,7 @@ export function AuthLanding() {
       ? "Password updated. Sign in with your new password."
       : null,
   );
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => callbackError());
 
   useEffect(() => {
     void fetch("/api/auth/config", { credentials: "same-origin" })
