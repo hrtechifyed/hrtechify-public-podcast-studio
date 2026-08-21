@@ -12,12 +12,14 @@ test("selection API supports explicit GET and POST only", () => {
 });
 
 test("selection always validates the immutable original source first", () => {
-  const sourceLoad = apiSource.indexOf("const source = await drive.getOwnedFile(show.id, show.name, sourceAssetId)");
+  const sourceLoad = apiSource.indexOf("const source = await storage.getOwnedFile(show.id, show.name, sourceAssetId)");
   const sourceValidation = apiSource.indexOf("const sourceKind = sourceBrandAssetKind");
-  const markerCreate = apiSource.indexOf("const selection = await createBrandSelectionMarker");
+  const markerCreate = apiSource.indexOf("selection = await createBrandSelectionMarker");
+  const dropboxMarkerCreate = apiSource.indexOf("const marker = new TextEncoder().encode");
   assert.ok(sourceLoad >= 0);
   assert.ok(sourceValidation > sourceLoad);
   assert.ok(markerCreate > sourceValidation);
+  assert.ok(dropboxMarkerCreate > sourceValidation);
 });
 
 test("background-removed acceptance requires candidate to belong to the same source", () => {
@@ -32,7 +34,7 @@ test("Keep Original selects the original ID and Accept selects only a validated 
   assert.match(apiSource, /choice !== "original" && choice !== "background-removed"/);
 });
 
-test("selection history is append-only immutable JSON in Brand Assets", () => {
+test("Google Drive selection history is append-only immutable JSON in Brand Assets", () => {
   assert.match(driveSource, /stateMarker: "true"/);
   assert.match(driveSource, /selectionChoice: input\.choice/);
   assert.match(driveSource, /selectedAssetId: input\.selectedAssetId/);
@@ -43,7 +45,7 @@ test("selection history is append-only immutable JSON in Brand Assets", () => {
   assert.doesNotMatch(driveSource, /method: "DELETE"/);
 });
 
-test("latest selection is scoped to show, exact original source and selection kind", () => {
+test("latest Google Drive selection is scoped to show, exact original source and selection kind", () => {
   assert.match(driveSource, /key='sourceAssetId' and value=/);
   assert.match(driveSource, /key='assetKind' and value=/);
   assert.match(driveSource, /orderBy", "createdTime desc"/);
@@ -59,7 +61,7 @@ test("UI requires an explicit decision after preview", () => {
   assert.doesNotMatch(uiSource, /setCandidate\(payload\)[\s\S]{0,120}selectBrandVersion/);
 });
 
-test("UI records selections using the selected show and Drive account", () => {
+test("UI records selections using the selected show and storage account", () => {
   assert.match(uiSource, /sourceAssetId: source\.id/);
   assert.match(uiSource, /choice,/);
   assert.match(uiSource, /candidateAssetId/);
