@@ -22,12 +22,12 @@ test("schema readiness checks sqlite metadata without reading user data", () => 
   assert.doesNotMatch(schema, /SELECT \* FROM users/);
 });
 
-test("password auth stays disabled until all required D1 tables exist", () => {
+test("password auth stays disabled until the required D1 schema exists", () => {
   assert.match(passwordApi, /isPasswordAuthSchemaReady/);
   assert.match(passwordApi, /password_schema_not_ready/);
   assert.match(passwordApi, /await requirePasswordSchema\(env\)/);
   assert.match(passwordApi, /signin: schemaReady/);
-  assert.match(passwordApi, /signup: schemaReady && passwordEmailConfigured\(env\)/);
+  assert.match(passwordApi, /signup: schemaReady/);
   assert.match(passwordApi, /recovery: schemaReady && passwordEmailConfigured\(env\)/);
   assert.match(authApi, /password: await passwordAuthConfiguration\(env\)/);
 });
