@@ -11,6 +11,34 @@ export interface UserRow {
   updated_at: string;
 }
 
+const passwordIdentitySubject = (email: string) => `password:${normalizeEmail(email)}`;
+
+const hasUnverifiedPasswordBoundary = async (
+  db: D1DatabaseLike,
+  userId: string,
+  email: string,
+) => {
+  const row = await db
+    .prepare(
+      `SELECT 1 AS blocked
+       WHERE EXISTS (
+         SELECT 1
+         FROM auth_password_credentials
+         WHERE user_id = ?
+       ) OR EXISTS (
+         SELECT 1
+         FROM auth_identities
+         WHERE user_id = ?
+           AND provider = 'email'
+           AND subject = ?
+       )`,
+    )
+    .bind(userId, userId, passwordIdentitySubject(email))
+    .first<{ blocked: number }>();
+
+  return Boolean(row);
+};
+
 export const getUserByEmail = async (
   db: D1DatabaseLike,
   email: string,
@@ -56,7 +84,7 @@ export const createUserForPasswordSignup = async (
         `INSERT INTO auth_identities (provider, subject, user_id, email)
          VALUES ('email', ?, ?, ?)`,
       )
-      .bind(normalizedEmail, userId, normalizedEmail)
+      .bind(passwordIdentitySubject(normalizedEmail), userId, normalizedEmail)
       .run();
   } catch {
     await db.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run();
@@ -64,6 +92,13 @@ export const createUserForPasswordSignup = async (
   }
 
   return created;
+};
+
+export const deletePasswordSignupUser = async (
+  db: D1DatabaseLike,
+  userId: string,
+) => {
+  await db.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run();
 };
 
 export const findOrCreateUserForProvider = async (
@@ -110,6 +145,10 @@ export const findOrCreateUserForProvider = async (
   }
 
   const existingByEmail = await getUserByEmail(db, normalizedEmail);
+  if (existingByEmail && await hasUnverifiedPasswordBoundary(db, existingByEmail.id, normalizedEmail)) {
+    throw new Error("unverified_password_email_conflict");
+  }
+
   const userId = existingByEmail?.id ?? crypto.randomUUID();
 
   if (!existingByEmail) {
