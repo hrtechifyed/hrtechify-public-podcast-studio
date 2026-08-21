@@ -67,7 +67,8 @@ test("authentication abuse controls store only hashed rate keys", () => {
 });
 
 test("password routes are intercepted before generic auth", () => {
-  const passwordIndex = indexSource.indexOf("handlePasswordAuthApi(request, url, env)");
-  const authIndex = indexSource.indexOf("handleAuthApi(request, url, env)");
+  const handlerSection = indexSource.slice(indexSource.indexOf("const handlers = ["));
+  const passwordIndex = handlerSection.indexOf("handlePasswordAuthApi,");
+  const authIndex = handlerSection.indexOf("handleAuthApi,");
   assert.ok(passwordIndex >= 0 && authIndex > passwordIndex);
 });
