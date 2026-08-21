@@ -136,10 +136,10 @@ test("publish preference route executes before render and generic Episode handle
 });
 
 test("privacy page discloses persistent Drive caption timing, safe templates and immutable final outputs", () => {
-  assert.match(privacy, /exact recognized word tokens and their timestamps/);
+  assert.match(privacy, /exact recognized word tokens\/timestamps/);
   assert.match(privacy, /curated declarative templates/);
   assert.match(privacy, /downloadable WebVTT caption file/);
-  assert.match(privacy, /separate final MP3, final MP4 and final WebVTT/);
+  assert.match(privacy, /separate final MP3, MP4 and WebVTT/);
   assert.match(privacy, /public internet access disabled/);
   assert.match(privacy, /PLATFORM_CREDIT/);
 });
