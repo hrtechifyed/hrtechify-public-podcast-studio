@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const authSource = await readFile(new URL("../apps/worker/src/auth-api.ts", import.meta.url), "utf8");
+const authUiSource = await readFile(new URL("../apps/web/src/AuthLanding.tsx", import.meta.url), "utf8");
 const passwordApiSource = await readFile(new URL("../apps/worker/src/password-auth-api.ts", import.meta.url), "utf8");
 const passwordSource = await readFile(new URL("../apps/worker/src/password.ts", import.meta.url), "utf8");
 const storeSource = await readFile(new URL("../apps/worker/src/password-auth-store.ts", import.meta.url), "utf8");
@@ -60,6 +61,33 @@ test("immediate password signup cannot claim an email already owned by another i
   assert.match(usersSource, /if \(!created\) return null/);
   assert.match(usersSource, /INSERT INTO auth_identities/);
   assert.match(usersSource, /DELETE FROM users WHERE id = \?/);
+});
+
+test("unverified password identities cannot absorb later verified Google or email identities", () => {
+  assert.match(usersSource, /const passwordIdentitySubject = \(email: string\) => `password:\$\{normalizeEmail\(email\)\}`/);
+  assert.match(usersSource, /hasUnverifiedPasswordBoundary/);
+  assert.match(usersSource, /FROM auth_password_credentials/);
+  assert.match(usersSource, /subject = \?/);
+  assert.match(usersSource, /throw new Error\("unverified_password_email_conflict"\)/);
+  assert.match(authSource, /google_password_account_conflict/);
+  assert.match(authSource, /email_password_account_conflict/);
+  assert.match(authUiSource, /Google cannot be linked automatically because password-only email ownership is not verified/);
+  assert.match(authUiSource, /params\.get\("auth"\) === "error"/);
+});
+
+test("password signup cannot leave a user stranded when credential setup fails", () => {
+  const signupStart = passwordApiSource.indexOf("const signup =");
+  const verifyStart = passwordApiSource.indexOf("const verifySignup =");
+  const signupSource = passwordApiSource.slice(signupStart, verifyStart);
+  const hashIndex = signupSource.indexOf("const material = await hashPassword(password)");
+  const createIndex = signupSource.indexOf("createUserForPasswordSignup(db, email)");
+  const credentialIndex = signupSource.indexOf("upsertPasswordCredential(db, user.id, user.email, material)");
+  const rollbackIndex = signupSource.indexOf("deletePasswordSignupUser(db, user.id)");
+
+  assert.ok(hashIndex >= 0 && createIndex > hashIndex, "password hashing must finish before the email is reserved");
+  assert.ok(credentialIndex > createIndex, "credential persistence must happen after user creation");
+  assert.ok(rollbackIndex > credentialIndex, "failed credential persistence must compensate by deleting the new user");
+  assert.match(usersSource, /export const deletePasswordSignupUser/);
 });
 
 test("legacy verification links remain consumable without being used for new signups", () => {

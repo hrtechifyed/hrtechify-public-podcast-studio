@@ -19,7 +19,12 @@ import {
 } from "./password-auth-store";
 import { isPasswordAuthSchemaReady } from "./schema-readiness";
 import { createSessionCookie } from "./session";
-import { createUserForPasswordSignup, findOrCreateUserForProvider, getUserByEmail } from "./users";
+import {
+  createUserForPasswordSignup,
+  deletePasswordSignupUser,
+  findOrCreateUserForProvider,
+  getUserByEmail,
+} from "./users";
 
 const SIGNUP_PATH = "/api/auth/password/signup";
 const VERIFY_PATH = "/api/auth/password/verify";
@@ -111,13 +116,29 @@ const signup = async (request: Request, env: WorkerEnv) => {
     return json({ error: "account_uses_other_signin" }, 409);
   }
 
+  // Complete the expensive, failure-prone hash before reserving the email in D1.
+  // This keeps a hashing failure from leaving behind an unusable account.
+  const material = await hashPassword(password);
   const user = await createUserForPasswordSignup(db, email);
   if (!user) {
     return json({ error: "account_uses_other_signin" }, 409);
   }
 
-  const material = await hashPassword(password);
-  await upsertPasswordCredential(db, user.id, user.email, material);
+  try {
+    await upsertPasswordCredential(db, user.id, user.email, material);
+  } catch (error) {
+    // D1 is accessed through individual prepared statements in this service, so
+    // compensate if credential persistence fails after the user was created.
+    // Cascading foreign keys remove the password-only identity as well.
+    try {
+      await deletePasswordSignupUser(db, user.id);
+    } catch {
+      // Preserve the original credential error. A later operational cleanup can
+      // handle an exceptional D1 failure while the request still fails closed.
+    }
+    throw error;
+  }
+
   await clearAuthRateLimit(db, "password-signup", keyHash);
   const cookie = await sessionForUser(env, user);
 
