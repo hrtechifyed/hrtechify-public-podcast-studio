@@ -19,23 +19,26 @@ test("intro/outro API has explicit list, start, chunk and status methods", () =>
   assert.match(apiSource, /isStatus && request\.method !== "POST"/);
 });
 
-test("brand media token is user-bound and API never returns the Google session URL", () => {
+test("brand media tokens are user-bound and API never returns provider session URLs", () => {
   assert.match(apiSource, /createBrandMediaUploadToken/);
   assert.match(apiSource, /readBrandMediaUploadToken/);
+  assert.match(apiSource, /createDropboxBrandToken/);
+  assert.match(apiSource, /readDropboxBrandToken/);
   assert.match(apiSource, /x-hrtechify-brand-upload-token/);
-  assert.match(apiSource, /return json\(\{ uploadToken, nextOffset: 0 \}, 201\)/);
+  assert.match(apiSource, /return json\(\{ uploadToken, nextOffset: 0, provider: "google-drive" \}, 201\)/);
+  assert.match(apiSource, /provider: "dropbox"/);
   assert.doesNotMatch(apiSource, /return json\(\{\s*sessionUrl/);
   assert.doesNotMatch(apiSource, /authorization: `Bearer/);
 });
 
-test("every brand media operation is tenant and assigned-Drive scoped", () => {
+test("every brand media operation is tenant and assigned-storage scoped", () => {
   assert.match(apiSource, /requireVerifiedIdentity\(request, env\)/);
   assert.match(apiSource, /getShowForUser\(db, userId, showId\)/);
   assert.match(apiSource, /getStorageConnectionForUser\(db, userId, connectionId\)/);
   assert.match(apiSource, /show\.storage_connection_id !== connection\.id/);
 });
 
-test("intro/outro originals are created in Brand Assets as immutable originals", () => {
+test("Google Drive intro/outro originals are created in Brand Assets as immutable originals", () => {
   assert.match(transportSource, /startGoogleDriveBrandMediaResumableUpload/);
   assert.match(transportSource, /parents: \[workspace\.folders\.brandAssets\]/);
   assert.match(transportSource, /folder: "brand-assets"/);
@@ -50,11 +53,12 @@ test("original recording resumable implementation remains explicitly Episodes/or
   assert.match(recordingSecuritySource, /original recording is created as immutable in the Episodes folder/);
 });
 
-test("chunk bytes and final metadata are reverified", () => {
-  const rangeIndex = apiSource.indexOf("parseResumableContentRange(");
-  const bufferIndex = apiSource.indexOf("await request.arrayBuffer()");
-  const uploadIndex = apiSource.indexOf("uploadGoogleDriveResumableChunk(");
-  assert.ok(rangeIndex >= 0 && bufferIndex > rangeIndex && uploadIndex > bufferIndex);
+test("chunk bytes and final Google Drive metadata are reverified", () => {
+  const googleBranch = apiSource.indexOf("const payload = await readBrandMediaUploadToken");
+  const rangeIndex = apiSource.indexOf("parseResumableContentRange(", googleBranch);
+  const bufferIndex = apiSource.indexOf("await request.arrayBuffer()", googleBranch);
+  const uploadIndex = apiSource.indexOf("uploadGoogleDriveResumableChunk(", googleBranch);
+  assert.ok(googleBranch >= 0 && rangeIndex > googleBranch && bufferIndex > rangeIndex && uploadIndex > bufferIndex);
   assert.match(apiSource, /chunkBody\.byteLength !== parsedRange\.length/);
   assert.match(apiSource, /file\.appProperties\.assetKind !== input\.assetKind/);
   assert.match(apiSource, /file\.appProperties\.original !== "true"/);
@@ -62,7 +66,7 @@ test("chunk bytes and final metadata are reverified", () => {
   assert.match(apiSource, /file\.sizeBytes !== input\.expectedTotalBytes/);
 });
 
-test("media listing stays show-scoped and filters intro/outro originals only", () => {
+test("Google Drive media listing stays show-scoped and filters intro/outro originals only", () => {
   assert.match(listSource, /key='showId' and value=/);
   assert.match(listSource, /key='folder' and value='brand-assets'/);
   assert.match(listSource, /key='original' and value='true'/);
@@ -70,7 +74,8 @@ test("media listing stays show-scoped and filters intro/outro originals only", (
 });
 
 test("brand media handler executes before generic branding handler", () => {
-  const mediaIndex = indexSource.indexOf("const brandMediaResponse = await handleBrandMediaApi");
-  const brandIndex = indexSource.indexOf("const brandAssetsResponse = await handleBrandAssetsApi");
+  const handlerSection = indexSource.slice(indexSource.indexOf("const handlers = ["));
+  const mediaIndex = handlerSection.indexOf("handleBrandMediaApi,");
+  const brandIndex = handlerSection.indexOf("handleBrandAssetsApi,");
   assert.ok(mediaIndex >= 0 && brandIndex >= 0 && mediaIndex < brandIndex);
 });
