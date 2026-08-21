@@ -19,13 +19,15 @@ test("background removal uses foreground segmentation and PNG output", () => {
   assert.match(apiSource, /images_binding_not_configured/);
 });
 
-test("source and candidate access stay tenant and show scoped", () => {
+test("source and candidate access stay tenant, show and assigned-storage scoped", () => {
   assert.match(apiSource, /requireVerifiedIdentity\(request, env\)/);
   assert.match(apiSource, /getShowForUser\(db, userId, showId\)/);
   assert.match(apiSource, /getStorageConnectionForUser\(db, userId, connectionId\)/);
   assert.match(apiSource, /show\.storage_connection_id !== connection\.id/);
-  assert.match(apiSource, /drive\.getOwnedFile\(show\.id, show\.name, sourceAssetId\)/);
-  assert.match(apiSource, /drive\.getOwnedFile\(show\.id, show\.name, candidatePreviewId\)/);
+  assert.match(apiSource, /createStudioStorageSession\(env, db, identity\.userId, connection\)/);
+  assert.match(apiSource, /storage\.getOwnedFile\(show\.id, show\.name, sourceAssetId\)/);
+  assert.match(apiSource, /storage\.getOwnedFile\(show\.id, show\.name, candidateAssetId\)/);
+  assert.match(apiSource, /storage\.getOwnedFile\(show\.id, show\.name, candidatePreviewId\)/);
 });
 
 test("derived candidate is append-only and points back to source", () => {
@@ -45,14 +47,15 @@ test("candidate preview is inline, no-store and nosniff", () => {
 });
 
 test("background-removal handler runs before generic branding handler", () => {
-  const backgroundIndex = indexSource.indexOf("handleBackgroundRemovalApi");
-  const brandIndex = indexSource.indexOf("handleBrandAssetsApi");
+  const handlerSection = indexSource.slice(indexSource.indexOf("const handlers = ["));
+  const backgroundIndex = handlerSection.indexOf("handleBackgroundRemovalApi,");
+  const brandIndex = handlerSection.indexOf("handleBrandAssetsApi,");
   assert.ok(backgroundIndex >= 0);
   assert.ok(brandIndex >= 0);
   assert.ok(backgroundIndex < brandIndex);
 });
 
-test("no Drive or Cloudflare credentials are returned to browser", () => {
+test("no storage-provider or Cloudflare credentials are returned to browser", () => {
   assert.doesNotMatch(apiSource, /refresh_token_encrypted/);
   assert.doesNotMatch(apiSource, /accessToken/);
   assert.doesNotMatch(apiSource, /sessionUrl/);
