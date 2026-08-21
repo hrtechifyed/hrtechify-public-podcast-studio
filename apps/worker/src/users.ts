@@ -24,6 +24,48 @@ export const getUserByEmail = async (
     .bind(normalizeEmail(email))
     .first<UserRow>();
 
+export const createUserForPasswordSignup = async (
+  db: D1DatabaseLike,
+  email: string,
+): Promise<UserRow | null> => {
+  const normalizedEmail = normalizeEmail(email);
+  const userId = crypto.randomUUID();
+
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO users (id, email, display_name, status)
+       VALUES (?, ?, NULL, 'active')`,
+    )
+    .bind(userId, normalizedEmail)
+    .run();
+
+  const created = await db
+    .prepare(
+      `SELECT id, email, display_name, status, created_at, updated_at
+       FROM users
+       WHERE id = ?`,
+    )
+    .bind(userId)
+    .first<UserRow>();
+
+  if (!created) return null;
+
+  try {
+    await db
+      .prepare(
+        `INSERT INTO auth_identities (provider, subject, user_id, email)
+         VALUES ('email', ?, ?, ?)`,
+      )
+      .bind(normalizedEmail, userId, normalizedEmail)
+      .run();
+  } catch {
+    await db.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run();
+    return null;
+  }
+
+  return created;
+};
+
 export const findOrCreateUserForProvider = async (
   db: D1DatabaseLike,
   provider: "google" | "email",
