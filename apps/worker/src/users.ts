@@ -120,14 +120,13 @@ export const findOrCreateUserForProvider = async (
     .bind(provider, subject)
     .first<UserRow>();
 
-  // Password credentials are a hard account boundary. Do not infer that a
-  // different sign-in method belongs to the same person merely because the email
-  // text matches. This intentionally applies to both immediate password accounts
-  // and older verified password accounts. Existing users retain password access;
+  // Password credentials are a hard account boundary. Do not allow any other
+  // provider to authenticate into a password-bearing account solely because an
+  // identity was linked previously. This includes legacy Google links created by
+  // older verified-password flows. Existing users retain password access;
   // cross-method linking would require a separate explicit authenticated flow.
   if (
     linked &&
-    provider === "email" &&
     await hasPasswordIdentityBoundary(db, linked.id, normalizedEmail)
   ) {
     throw new Error("password_identity_conflict");
