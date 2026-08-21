@@ -1,6 +1,6 @@
 import { normalizeEmail, randomToken, sha256Base64Url } from "./auth-utils";
 import { requireDatabase, type WorkerEnv } from "./db";
-import { isEmailDeliveryConfigured, sendPasswordResetEmail, sendPasswordVerificationEmail } from "./email";
+import { isEmailDeliveryConfigured, sendPasswordResetEmail } from "./email";
 import {
   burnUnknownPasswordAttempt,
   hashPassword,
@@ -15,12 +15,11 @@ import {
   getPasswordCredentialByEmail,
   recordAuthAttempt,
   savePasswordReset,
-  savePasswordVerification,
   upsertPasswordCredential,
 } from "./password-auth-store";
 import { isPasswordAuthSchemaReady } from "./schema-readiness";
 import { createSessionCookie } from "./session";
-import { findOrCreateUserForProvider, getUserByEmail } from "./users";
+import { createUserForPasswordSignup, findOrCreateUserForProvider, getUserByEmail } from "./users";
 
 const SIGNUP_PATH = "/api/auth/password/signup";
 const VERIFY_PATH = "/api/auth/password/verify";
@@ -91,7 +90,7 @@ const sessionForUser = async (
 );
 
 const signup = async (request: Request, env: WorkerEnv) => {
-  if (!passwordEmailConfigured(env)) return json({ error: "password_signup_not_configured" }, 503);
+  if (!passwordDbConfigured(env)) return json({ error: "password_signup_not_configured" }, 503);
   await requirePasswordSchema(env);
   const body = await parseJson(request);
   const email = validEmail(body.email);
@@ -107,25 +106,33 @@ const signup = async (request: Request, env: WorkerEnv) => {
     return json({ error: "account_already_has_password" }, 409);
   }
 
-  const material = await hashPassword(password);
-  const token = randomToken(32);
-  const tokenHash = await sha256Base64Url(token);
-  await savePasswordVerification(db, tokenHash, email, material);
-
-  const verifyUrl = new URL(VERIFY_PATH, new URL(request.url).origin);
-  verifyUrl.searchParams.set("token", token);
-  try {
-    await sendPasswordVerificationEmail(env, email, verifyUrl.toString());
-  } catch {
-    return json({ error: "email_delivery_failed" }, 503);
+  const existingUser = await getUserByEmail(db, email);
+  if (existingUser) {
+    return json({ error: "account_uses_other_signin" }, 409);
   }
 
-  return json({
-    ok: true,
-    message: "Check your email to verify your address before signing in with this password.",
-  }, 202);
+  const user = await createUserForPasswordSignup(db, email);
+  if (!user) {
+    return json({ error: "account_uses_other_signin" }, 409);
+  }
+
+  const material = await hashPassword(password);
+  await upsertPasswordCredential(db, user.id, user.email, material);
+  await clearAuthRateLimit(db, "password-signup", keyHash);
+  const cookie = await sessionForUser(env, user);
+
+  return json(
+    {
+      ok: true,
+      redirectTo: "/?auth=success&newAccount=1&brandSetup=1",
+      message: "Account created. Your email is used as the account identifier but is not independently verified.",
+    },
+    201,
+    { "set-cookie": cookie },
+  );
 };
 
+// Legacy verification links remain consumable so an already-issued link is not broken.
 const verifySignup = async (request: Request, env: WorkerEnv) => {
   if (!passwordDbConfigured(env)) return redirect("/?auth=error&reason=authentication_not_configured");
   if (!(await passwordSchemaReady(env))) return redirect("/?auth=error&reason=password_schema_not_ready");
@@ -137,7 +144,11 @@ const verifySignup = async (request: Request, env: WorkerEnv) => {
   const row = await consumePasswordVerification(db, await sha256Base64Url(token));
   if (!row) return redirect("/?auth=error&reason=password_verification_invalid_or_expired");
 
-  const user = await findOrCreateUserForProvider(db, "email", normalizeEmail(row.email), row.email);
+  const existingCredential = await getPasswordCredentialByEmail(db, row.email);
+  if (existingCredential) return redirect("/?auth=error&reason=account_already_has_password");
+
+  const existingUser = await getUserByEmail(db, row.email);
+  const user = existingUser ?? await findOrCreateUserForProvider(db, "email", normalizeEmail(row.email), row.email);
   if (user.status !== "active") return redirect("/?auth=error&reason=account_not_active");
   await upsertPasswordCredential(db, user.id, row.email, {
     passwordHash: row.password_hash,
@@ -238,7 +249,7 @@ export const passwordAuthConfiguration = async (env: WorkerEnv) => {
   const schemaReady = await passwordSchemaReady(env);
   return {
     signin: schemaReady,
-    signup: schemaReady && passwordEmailConfigured(env),
+    signup: schemaReady,
     recovery: schemaReady && passwordEmailConfigured(env),
     schemaReady,
   };
