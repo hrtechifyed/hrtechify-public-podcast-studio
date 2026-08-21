@@ -51,11 +51,12 @@ test("full privacy page distinguishes verified email identity from Gmail content
 });
 
 test("privacy page explains separate narrow Drive authorization", () => {
-  assert.match(privacy, /Connect Google Drive/);
+  assert.match(privacy, /Connected storage is a separate choice/);
+  assert.match(privacy, /Signing in with Google does[\s\S]*not[\s\S]*connect Google Drive or Dropbox/);
   assert.match(privacy, /googleapis\.com\/auth\/drive\.file/);
-  assert.match(privacy, /does not request the broad/);
+  assert.match(privacy, /does not request broad/);
   assert.match(privacy, /drive\.readonly/);
-  assert.match(privacy, /not permission to browse your entire Drive/);
+  assert.match(privacy, /one explicitly assigned storage connection/);
 });
 
 test("privacy page documents password, session, token and media safeguards", () => {
@@ -67,7 +68,8 @@ test("privacy page documents password, session, token and media safeguards", () 
   assert.match(privacy, /Secure/);
   assert.match(privacy, /SameSite=Lax/);
   assert.match(privacy, /refresh tokens are encrypted server-side/);
-  assert.match(privacy, /not returned to the browser/);
+  assert.match(privacy, /Provider OAuth access tokens and provider upload-session details stay on the server/);
+  assert.match(privacy, /encrypted, user-bound capability token/);
 });
 
 test("privacy page is honest about originals, Cloudflare processing and deletion state", () => {
@@ -76,8 +78,9 @@ test("privacy page is honest about originals, Cloudflare processing and deletion
   assert.match(privacy, /Accept/);
   assert.match(privacy, /Retry/);
   assert.match(privacy, /Keep Original/);
-  assert.match(privacy, /does not delete files already stored in your Google Drive/);
-  assert.match(privacy, /Full self-service account deletion and retention controls are part of the remaining/);
+  assert.match(privacy, /does[\s\S]*not[\s\S]*delete files already stored in Google Drive or Dropbox/);
+  assert.match(privacy, /Self-service account deletion removes HRTechify/);
+  assert.match(privacy, /Account deletion does not call Google Drive or Dropbox deletion APIs/);
 });
 
 test("root keeps privacy and reset inside the app and gates Studio on account state", () => {
