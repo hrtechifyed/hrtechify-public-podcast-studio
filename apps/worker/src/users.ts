@@ -18,22 +18,31 @@ const hasUnverifiedPasswordBoundary = async (
   userId: string,
   email: string,
 ) => {
+  const normalizedEmail = normalizeEmail(email);
   const row = await db
     .prepare(
       `SELECT 1 AS blocked
        WHERE EXISTS (
          SELECT 1
-         FROM auth_password_credentials
-         WHERE user_id = ?
-       ) OR EXISTS (
-         SELECT 1
          FROM auth_identities
          WHERE user_id = ?
            AND provider = 'email'
            AND subject = ?
+       ) OR (
+         EXISTS (
+           SELECT 1
+           FROM auth_password_credentials
+           WHERE user_id = ?
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM auth_password_verifications
+           WHERE email = ?
+             AND consumed_at IS NOT NULL
+         )
        )`,
     )
-    .bind(userId, userId, passwordIdentitySubject(email))
+    .bind(userId, passwordIdentitySubject(normalizedEmail), userId, normalizedEmail)
     .first<{ blocked: number }>();
 
   return Boolean(row);
@@ -119,6 +128,20 @@ export const findOrCreateUserForProvider = async (
     )
     .bind(provider, subject)
     .first<UserRow>();
+
+  // PR #46 briefly created immediate password-only accounts using the same
+  // provider/subject shape as verified email identities. If such an account has
+  // no consumed password-verification record, do not let a later magic link
+  // silently authenticate into that password-accessible account. Genuine legacy
+  // verified password accounts retain their consumed verification record and
+  // continue to work normally.
+  if (
+    linked &&
+    provider === "email" &&
+    await hasUnverifiedPasswordBoundary(db, linked.id, normalizedEmail)
+  ) {
+    throw new Error("unverified_password_email_conflict");
+  }
 
   if (linked) {
     await db
