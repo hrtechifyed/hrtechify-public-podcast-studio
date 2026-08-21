@@ -6,6 +6,7 @@ const authSource = await readFile(new URL("../apps/worker/src/auth-api.ts", impo
 const passwordApiSource = await readFile(new URL("../apps/worker/src/password-auth-api.ts", import.meta.url), "utf8");
 const passwordSource = await readFile(new URL("../apps/worker/src/password.ts", import.meta.url), "utf8");
 const storeSource = await readFile(new URL("../apps/worker/src/password-auth-store.ts", import.meta.url), "utf8");
+const usersSource = await readFile(new URL("../apps/worker/src/users.ts", import.meta.url), "utf8");
 const storageSource = await readFile(new URL("../apps/worker/src/storage-api.ts", import.meta.url), "utf8");
 const migrationSource = await readFile(new URL("../database/migrations/0004_password_authentication.sql", import.meta.url), "utf8");
 const indexSource = await readFile(new URL("../apps/worker/src/index.ts", import.meta.url), "utf8");
@@ -39,20 +40,39 @@ test("plaintext passwords are never persisted", () => {
   assert.doesNotMatch(storeSource, /INSERT[^;]*\bpassword\s*[,)]/is);
 });
 
-test("signup requires one-time email verification before credential creation", () => {
-  assert.match(passwordApiSource, /savePasswordVerification/);
-  assert.match(passwordApiSource, /sendPasswordVerificationEmail/);
-  assert.match(passwordApiSource, /consumePasswordVerification/);
-  const consumeIndex = passwordApiSource.indexOf("consumePasswordVerification(");
-  const credentialIndex = passwordApiSource.indexOf("upsertPasswordCredential(", consumeIndex);
-  assert.ok(consumeIndex >= 0 && credentialIndex > consumeIndex);
+test("password signup is immediate without transactional email and creates a session", () => {
+  const signupStart = passwordApiSource.indexOf("const signup =");
+  const verifyStart = passwordApiSource.indexOf("const verifySignup =");
+  const signupSource = passwordApiSource.slice(signupStart, verifyStart);
+  assert.match(signupSource, /createUserForPasswordSignup/);
+  assert.match(signupSource, /upsertPasswordCredential/);
+  assert.match(signupSource, /sessionForUser/);
+  assert.match(signupSource, /redirectTo: "\/\?auth=success&newAccount=1&brandSetup=1"/);
+  assert.doesNotMatch(signupSource, /sendPasswordVerificationEmail|savePasswordVerification/);
+  assert.match(passwordApiSource, /signup: schemaReady/);
+  assert.match(passwordApiSource, /recovery: schemaReady && passwordEmailConfigured\(env\)/);
 });
 
-test("password reset is hashed, expiring, single-use and non-enumerating", () => {
+test("immediate password signup cannot claim an email already owned by another identity", () => {
+  assert.match(passwordApiSource, /const existingUser = await getUserByEmail\(db, email\)/);
+  assert.match(passwordApiSource, /account_uses_other_signin/);
+  assert.match(usersSource, /INSERT OR IGNORE INTO users/);
+  assert.match(usersSource, /if \(!created\) return null/);
+  assert.match(usersSource, /INSERT INTO auth_identities/);
+  assert.match(usersSource, /DELETE FROM users WHERE id = \?/);
+});
+
+test("legacy verification links remain consumable without being used for new signups", () => {
+  assert.match(passwordApiSource, /consumePasswordVerification/);
+  assert.match(passwordApiSource, /Legacy verification links remain consumable/);
+});
+
+test("password reset remains hashed, expiring, single-use and non-enumerating when email is configured", () => {
   assert.match(passwordApiSource, /sha256Base64Url\(token\)/);
   assert.match(storeSource, /consumed_at IS NULL/);
   assert.match(storeSource, /expires_at > datetime\('now'\)/);
   assert.match(passwordApiSource, /If an account exists for that address, a password reset link will be sent/);
+  assert.match(passwordApiSource, /if \(!passwordEmailConfigured\(env\)\) return json\(\{ error: "password_reset_not_configured" \}, 503\)/);
 });
 
 test("unknown-password attempts still pay the password hash cost", () => {
