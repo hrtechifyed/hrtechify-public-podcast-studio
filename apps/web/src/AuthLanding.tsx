@@ -23,9 +23,10 @@ const friendlyError = (code?: string) => {
     case "invalid_email_or_password": return "The email or password is incorrect.";
     case "too_many_attempts": return "Too many attempts. Try again later.";
     case "email_delivery_failed": return "The account email could not be sent right now. Try again later.";
-    case "password_signup_not_configured": return "Email sign-up is not enabled for this deployment yet.";
+    case "password_signup_not_configured": return "Account creation is temporarily unavailable because verification email delivery is not configured yet.";
     case "password_signin_not_configured": return "Password sign-in is not enabled for this deployment yet.";
     case "password_reset_not_configured": return "Password recovery is not enabled for this deployment yet.";
+    case "password_schema_not_ready": return "Account creation is temporarily unavailable while the account database is being prepared.";
     default: return code || "The request could not be completed.";
   }
 };
@@ -66,14 +67,55 @@ export function AuthLanding() {
     window.location.assign("/api/auth/google/start?returnTo=/");
   };
 
+  const passwordEnabled = Boolean(config && (
+    mode === "signup"
+      ? config.providers.password?.signup
+      : mode === "signin"
+        ? config.providers.password?.signin
+        : config.providers.password?.recovery
+  ));
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    setBusy(true);
     setError(null);
     setNotice(null);
+
+    if (mode === "signup") {
+      if (password.length < 12) {
+        setError("Use a password of at least 12 characters.");
+        return;
+      }
+      if (password.length > 128) {
+        setError("Use a password of 128 characters or fewer.");
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError("Passwords do not match.");
+        return;
+      }
+      if (!passwordEnabled) {
+        setError(
+          config === null
+            ? "Account setup is still being checked. Try again in a moment."
+            : "Account creation is temporarily unavailable because verification email delivery is not configured yet.",
+        );
+        return;
+      }
+    }
+
+    if (mode === "signin" && !passwordEnabled) {
+      setError(config === null ? "Sign-in setup is still being checked. Try again in a moment." : "Password sign-in is not enabled for this deployment yet.");
+      return;
+    }
+
+    if (mode === "forgot" && !passwordEnabled) {
+      setError(config === null ? "Password recovery setup is still being checked. Try again in a moment." : "Password recovery is not enabled for this deployment yet.");
+      return;
+    }
+
+    setBusy(true);
     try {
       if (mode === "signup") {
-        if (password !== confirmPassword) throw new Error("Passwords do not match.");
         const response = await fetch("/api/auth/password/signup", {
           method: "POST",
           credentials: "same-origin",
@@ -114,14 +156,6 @@ export function AuthLanding() {
       setBusy(false);
     }
   };
-
-  const passwordEnabled = Boolean(config && (
-    mode === "signup"
-      ? config.providers.password?.signup
-      : mode === "signin"
-        ? config.providers.password?.signin
-        : config.providers.password?.recovery
-  ));
 
   return (
     <div className="public-shell">
@@ -197,7 +231,14 @@ export function AuthLanding() {
                   required
                   disabled={busy}
                 />
-                {mode === "signup" && <span className="setup-hint">At least 12 characters. No forced symbol or capitalization pattern.</span>}
+                {mode === "signup" && (
+                  <span className="setup-hint">
+                    At least 12 characters. No forced symbol or capitalization pattern.<br />
+                    <strong>Acceptable example:</strong> <code>Riverstone2026</code><br />
+                    <strong>Not acceptable:</strong> <code>hello123</code> — fewer than 12 characters.<br />
+                    Examples only — choose your own password.
+                  </span>
+                )}
               </label>
             )}
 
@@ -208,7 +249,7 @@ export function AuthLanding() {
               </label>
             )}
 
-            <button className="primary-action" type="submit" disabled={busy || !passwordEnabled}>
+            <button className="primary-action" type="submit" disabled={busy}>
               {busy ? "Working…" : mode === "signup" ? "Create account" : mode === "signin" ? "Sign in" : "Send reset link"}
             </button>
           </form>

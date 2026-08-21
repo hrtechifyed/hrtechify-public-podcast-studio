@@ -18,6 +18,17 @@ test("public home clearly separates first-time signup and returning-user signin"
   assert.match(landing, /\/api\/auth\/password\/signin/);
 });
 
+test("signup button stays actionable and password guidance is concrete", () => {
+  assert.match(landing, /<button className="primary-action" type="submit" disabled=\{busy\}>/);
+  assert.match(landing, /Acceptable example:/);
+  assert.match(landing, /Riverstone2026/);
+  assert.match(landing, /Not acceptable:/);
+  assert.match(landing, /hello123/);
+  assert.match(landing, /fewer than 12 characters/);
+  assert.match(landing, /Account creation is temporarily unavailable because verification email delivery is not configured yet/);
+  assert.doesNotMatch(landing, /disabled=\{busy \|\| !passwordEnabled\}/);
+});
+
 test("returning users have forgot-password recovery and secure reset route", () => {
   assert.match(landing, /Forgot password\?/);
   assert.match(landing, /\/api\/auth\/password\/forgot/);
