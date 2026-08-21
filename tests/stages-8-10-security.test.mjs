@@ -96,7 +96,7 @@ test("Stage 10 creates fixed MP3 and MP4 outputs in the no-internet container", 
 });
 
 test("intro and outro are immutable optional inputs and are never overwritten", () => {
-  assert.match(workflow, /listShowBrandMedia/);
+  assert.match(workflow, /listStudioBrandMedia/);
   assert.match(workflow, /show-intro-original/);
   assert.match(workflow, /show-outro-original/);
   assert.match(workflow, /appProperties\.original !== "true"/);
@@ -128,9 +128,10 @@ test("UI exposes curated template choice and final Drive outputs without sending
 });
 
 test("publish preference route executes before render and generic Episode handlers", () => {
-  const prefPosition = index.indexOf("handlePublishPreferencesApi(request, url, env)");
-  const renderPosition = index.indexOf("handleRenderApi(request, url, env)");
-  const episodePosition = index.indexOf("handleEpisodeApi(request, url, env)");
+  const handlerSection = index.slice(index.indexOf("const handlers = ["));
+  const prefPosition = handlerSection.indexOf("handlePublishPreferencesApi,");
+  const renderPosition = handlerSection.indexOf("handleRenderApi,");
+  const episodePosition = handlerSection.indexOf("handleEpisodeApi,");
   assert.ok(prefPosition >= 0 && renderPosition > prefPosition && episodePosition > renderPosition);
 });
 
