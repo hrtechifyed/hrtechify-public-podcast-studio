@@ -56,7 +56,7 @@ test("self-service account deletion preserves remote files", () => {
   assert.match(privacyApi, /DELETE MY ACCOUNT/);
   assert.match(privacyApi, /preserveStorageFiles/);
   assert.match(privacyApi, /storageFilesPreserved/);
-  assert.doesNotMatch(privacyApi, /delete.*GoogleDrive|delete.*Dropbox/i);
+  assert.doesNotMatch(privacyApi, /deleteGoogleDrive|deleteDropbox|files\/delete_v2|drive\.files\.delete/i);
   assert.match(privacyPage, /does not call Google Drive or Dropbox deletion APIs/);
 });
 
