@@ -75,13 +75,18 @@ test("password account identity isolation is explicit", () => {
   assert.match(authUiSource, /Google is not linked automatically just because the email text matches/);
 });
 
-test("linked email identities are checked before return", () => {
+test("all already-linked providers, including Google, are checked before return", () => {
   const linkedLookup = usersSource.indexOf("const linked = await db");
-  const linkedBoundary = usersSource.indexOf("linked &&\n    provider === \"email\"");
+  const linkedBoundary = usersSource.indexOf("linked &&\n    await hasPasswordIdentityBoundary");
   const linkedReturn = usersSource.indexOf("if (linked) {", linkedLookup);
-  assert.ok(linkedLookup >= 0);
-  assert.ok(linkedBoundary > linkedLookup);
-  assert.ok(linkedReturn > linkedBoundary);
+
+  assert.ok(linkedLookup >= 0, "linked identity lookup must exist");
+  assert.ok(linkedBoundary > linkedLookup, "password boundary must run after the linked identity is known");
+  assert.ok(linkedReturn > linkedBoundary, "password boundary must run before accepting any linked provider");
+
+  const linkedGuard = usersSource.slice(linkedBoundary, linkedReturn);
+  assert.doesNotMatch(linkedGuard, /provider\s*===\s*["']email["']/, "linked Google identities must not bypass the password boundary");
+  assert.match(usersSource, /legacy Google links/);
 });
 
 test("password signup cleans up when credential setup fails", () => {
