@@ -21,8 +21,8 @@ const friendlyError = (code?: string) => {
     case "password_too_long": return "Use a password of 128 characters or fewer.";
     case "account_already_has_password": return "This email already has a password. Sign in instead.";
     case "account_uses_other_signin": return "This email is already attached to another sign-in method. Use Continue with Google for that account.";
-    case "google_password_account_conflict": return "This email is already registered with password sign-in. Google cannot be linked automatically because password-only email ownership is not verified. Sign in with your password instead.";
-    case "email_password_account_conflict": return "This email is already registered with password sign-in and cannot be linked automatically to an email sign-in link.";
+    case "google_password_account_conflict": return "This email already belongs to a password account. For security, Google is not linked automatically just because the email text matches. Sign in with your password instead.";
+    case "email_password_account_conflict": return "This email already belongs to a password account. For security, email sign-in links are not automatically joined to password accounts. Sign in with your password instead.";
     case "invalid_email_or_password": return "The email or password is incorrect.";
     case "too_many_attempts": return "Too many attempts. Try again later.";
     case "email_delivery_failed": return "The account email could not be sent right now. Try again later.";
