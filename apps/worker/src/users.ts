@@ -13,36 +13,27 @@ export interface UserRow {
 
 const passwordIdentitySubject = (email: string) => `password:${normalizeEmail(email)}`;
 
-const hasUnverifiedPasswordBoundary = async (
+const hasPasswordIdentityBoundary = async (
   db: D1DatabaseLike,
   userId: string,
   email: string,
 ) => {
-  const normalizedEmail = normalizeEmail(email);
   const row = await db
     .prepare(
       `SELECT 1 AS blocked
        WHERE EXISTS (
          SELECT 1
+         FROM auth_password_credentials
+         WHERE user_id = ?
+       ) OR EXISTS (
+         SELECT 1
          FROM auth_identities
          WHERE user_id = ?
            AND provider = 'email'
            AND subject = ?
-       ) OR (
-         EXISTS (
-           SELECT 1
-           FROM auth_password_credentials
-           WHERE user_id = ?
-         )
-         AND NOT EXISTS (
-           SELECT 1
-           FROM auth_password_verifications
-           WHERE email = ?
-             AND consumed_at IS NOT NULL
-         )
        )`,
     )
-    .bind(userId, passwordIdentitySubject(normalizedEmail), userId, normalizedEmail)
+    .bind(userId, userId, passwordIdentitySubject(email))
     .first<{ blocked: number }>();
 
   return Boolean(row);
@@ -129,18 +120,16 @@ export const findOrCreateUserForProvider = async (
     .bind(provider, subject)
     .first<UserRow>();
 
-  // PR #46 briefly created immediate password-only accounts using the same
-  // provider/subject shape as verified email identities. If such an account has
-  // no consumed password-verification record, do not let a later magic link
-  // silently authenticate into that password-accessible account. Genuine legacy
-  // verified password accounts retain their consumed verification record and
-  // continue to work normally.
+  // Password credentials are a hard account boundary. Do not allow any other
+  // provider to authenticate into a password-bearing account solely because an
+  // identity was linked previously. This includes legacy Google links created by
+  // older verified-password flows. Existing users retain password access;
+  // cross-method linking would require a separate explicit authenticated flow.
   if (
     linked &&
-    provider === "email" &&
-    await hasUnverifiedPasswordBoundary(db, linked.id, normalizedEmail)
+    await hasPasswordIdentityBoundary(db, linked.id, normalizedEmail)
   ) {
-    throw new Error("unverified_password_email_conflict");
+    throw new Error("password_identity_conflict");
   }
 
   if (linked) {
@@ -168,8 +157,8 @@ export const findOrCreateUserForProvider = async (
   }
 
   const existingByEmail = await getUserByEmail(db, normalizedEmail);
-  if (existingByEmail && await hasUnverifiedPasswordBoundary(db, existingByEmail.id, normalizedEmail)) {
-    throw new Error("unverified_password_email_conflict");
+  if (existingByEmail && await hasPasswordIdentityBoundary(db, existingByEmail.id, normalizedEmail)) {
+    throw new Error("password_identity_conflict");
   }
 
   const userId = existingByEmail?.id ?? crypto.randomUUID();

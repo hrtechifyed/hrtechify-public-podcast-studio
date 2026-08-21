@@ -35,8 +35,9 @@ export function UsagePage() {
 
         <Rule title="Password signup in the zero-cost setup">
           <p>Password-only accounts are created immediately after the email and password pass validation. No verification email is sent because transactional email is not currently configured.</p>
-          <p>The email address is used as the account identifier but is not independently verified. Google Sign-In remains the option for users who want a verified-email identity.</p>
-          <p>Password signup cannot take over an email address already attached to an existing Studio account. Password recovery by email is not currently available, so password-only users should keep their password safely.</p>
+          <p>The email address is used as the account identifier but is not independently verified. When creating a new account, Google Sign-In is the verified-email option.</p>
+          <p>Password signup cannot take over an email address already attached to an existing Studio account. Once a password credential exists, the Studio also does not automatically merge Google or email-link sign-in into that account just because the email text matches. Use the existing password sign-in unless a separate authenticated linking flow is introduced later.</p>
+          <p>Password recovery by email is not currently available, so password-only users should keep their password safely.</p>
         </Rule>
 
         <Rule title="Final generation runs on your device">
