@@ -99,8 +99,9 @@ export function PrivacyPage() {
 
         <PrivacySection title="Passwords and account recovery">
           <p>For email/password accounts, HRTechify does not store readable or reversible passwords. Passwords are processed with <strong>PBKDF2-HMAC-SHA256</strong>, a unique random salt and <strong>600,000 iterations</strong>; only the resulting hash material is stored.</p>
-          <p>Password sign-up is email-verification-first. Verification links expire after 30 minutes and are single-use. Password-reset links expire after 20 minutes and are single-use. The random link token itself is not stored in D1; only its SHA-256 hash is stored.</p>
-          <p>Forgot-password responses intentionally do not disclose whether an email address has an account.</p>
+          <p><strong>Password-only signup is immediate in the current zero-cost setup.</strong> The email address is stored as the account identifier, but HRTechify does not independently verify that you control that email address. If you want a verified-email identity, use Google Sign-In.</p>
+          <p>To prevent account takeover, password signup cannot claim an email address that is already attached to an existing Studio account or another sign-in method.</p>
+          <p><strong>Password recovery by email is currently unavailable</strong> because no transactional-email service is configured. If you create a password-only account, keep the password safely. Recovery can be enabled later if a suitable free email-delivery path is configured.</p>
         </PrivacySection>
 
         <PrivacySection title="Sessions and OAuth credentials">
@@ -114,7 +115,7 @@ export function PrivacyPage() {
           <p><strong>Google</strong> provides optional Google Sign-In and, separately, optional Google Drive storage when you authorize it.</p>
           <p><strong>Dropbox</strong> provides optional App Folder-confined storage when you authorize it.</p>
           <p><strong>jsDelivr</strong> delivers the pinned FFmpeg WebAssembly runtime code used for local media generation; podcast media is not sent there.</p>
-          <p><strong>Transactional email</strong> is used only for account verification, password recovery or authentication emails when email delivery is enabled. The current codebase uses a configured Resend integration; HRTechify does not need Gmail inbox access to send those emails.</p>
+          <p><strong>Transactional email is not currently configured.</strong> Password-only signup therefore does not send a verification email, and password recovery by email remains unavailable unless a suitable email-delivery service is enabled later.</p>
         </PrivacySection>
 
         <PrivacySection title="Account and retention controls">
