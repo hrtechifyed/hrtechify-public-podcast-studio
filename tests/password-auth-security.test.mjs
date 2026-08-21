@@ -54,7 +54,7 @@ test("password signup is immediate without transactional email and creates a ses
   assert.match(passwordApiSource, /recovery: schemaReady && passwordEmailConfigured\(env\)/);
 });
 
-test("immediate password signup cannot claim an email already owned by another identity", () => {
+test("password signup rejects an email already in use", () => {
   assert.match(passwordApiSource, /const existingUser = await getUserByEmail\(db, email\)/);
   assert.match(passwordApiSource, /account_uses_other_signin/);
   assert.match(usersSource, /INSERT OR IGNORE INTO users/);
@@ -63,32 +63,28 @@ test("immediate password signup cannot claim an email already owned by another i
   assert.match(usersSource, /DELETE FROM users WHERE id = \?/);
 });
 
-test("unverified password identities cannot absorb later verified Google or email identities", () => {
+test("password account identity isolation is explicit", () => {
   assert.match(usersSource, /const passwordIdentitySubject = \(email: string\) => `password:\$\{normalizeEmail\(email\)\}`/);
-  assert.match(usersSource, /hasUnverifiedPasswordBoundary/);
+  assert.match(usersSource, /hasPasswordIdentityBoundary/);
   assert.match(usersSource, /FROM auth_password_credentials/);
-  assert.match(usersSource, /FROM auth_password_verifications/);
-  assert.match(usersSource, /consumed_at IS NOT NULL/);
-  assert.match(usersSource, /subject = \?/);
-  assert.match(usersSource, /throw new Error\("unverified_password_email_conflict"\)/);
+  assert.doesNotMatch(usersSource, /FROM auth_password_verifications/);
+  assert.match(usersSource, /throw new Error\("password_identity_conflict"\)/);
+  assert.match(authSource, /error\.message === "password_identity_conflict"/);
   assert.match(authSource, /google_password_account_conflict/);
   assert.match(authSource, /email_password_account_conflict/);
-  assert.match(authUiSource, /Google cannot be linked automatically because password-only email ownership is not verified/);
-  assert.match(authUiSource, /params\.get\("auth"\) === "error"/);
+  assert.match(authUiSource, /Google is not linked automatically just because the email text matches/);
 });
 
-test("legacy immediate password identities are checked before an email identity is accepted as linked", () => {
+test("linked email identities are checked before return", () => {
   const linkedLookup = usersSource.indexOf("const linked = await db");
   const linkedBoundary = usersSource.indexOf("linked &&\n    provider === \"email\"");
   const linkedReturn = usersSource.indexOf("if (linked) {", linkedLookup);
-
-  assert.ok(linkedLookup >= 0, "linked identity lookup must exist");
-  assert.ok(linkedBoundary > linkedLookup, "legacy password boundary must be evaluated after the linked row is known");
-  assert.ok(linkedReturn > linkedBoundary, "legacy password boundary must be evaluated before accepting the linked email identity");
-  assert.match(usersSource, /Genuine legacy[\s\S]*consumed verification record/);
+  assert.ok(linkedLookup >= 0);
+  assert.ok(linkedBoundary > linkedLookup);
+  assert.ok(linkedReturn > linkedBoundary);
 });
 
-test("password signup cannot leave a user stranded when credential setup fails", () => {
+test("password signup cleans up when credential setup fails", () => {
   const signupStart = passwordApiSource.indexOf("const signup =");
   const verifyStart = passwordApiSource.indexOf("const verifySignup =");
   const signupSource = passwordApiSource.slice(signupStart, verifyStart);
@@ -96,10 +92,9 @@ test("password signup cannot leave a user stranded when credential setup fails",
   const createIndex = signupSource.indexOf("createUserForPasswordSignup(db, email)");
   const credentialIndex = signupSource.indexOf("upsertPasswordCredential(db, user.id, user.email, material)");
   const rollbackIndex = signupSource.indexOf("deletePasswordSignupUser(db, user.id)");
-
-  assert.ok(hashIndex >= 0 && createIndex > hashIndex, "password hashing must finish before the email is reserved");
-  assert.ok(credentialIndex > createIndex, "credential persistence must happen after user creation");
-  assert.ok(rollbackIndex > credentialIndex, "failed credential persistence must compensate by deleting the new user");
+  assert.ok(hashIndex >= 0 && createIndex > hashIndex);
+  assert.ok(credentialIndex > createIndex);
+  assert.ok(rollbackIndex > credentialIndex);
   assert.match(usersSource, /export const deletePasswordSignupUser/);
 });
 
